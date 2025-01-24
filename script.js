@@ -43,8 +43,6 @@ buyButtons.forEach(button => {
         alert('Товар добавлен в корзину!');
     });
 });
-
-
 document.addEventListener("DOMContentLoaded", () => {
     let rotation = 20;
 
