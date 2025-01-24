@@ -203,7 +203,7 @@ body{
   background-color: #000;
   perspective-origin: center;
   transform-style: preserve-3d;
-  overflow: hidden;
+  overflow: auto;
 }
 
 #intro-wrapper {
@@ -233,7 +233,7 @@ div.outer-iron{
   margin-top:5px;
   border-radius:50%;
   box-shadow: 1px 1px 4px rgba(138, 135, 135, 0.68) inset;
-  overflow:hidden;
+  overflow: auto;
   position:relative;
   transform:translateZ(3px);
   transform-style:preserve-3d;
