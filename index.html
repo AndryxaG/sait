@@ -3,1660 +3,1633 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Изометрический Склад — Интерактивная Игра с Редактором Стен</title>
-    <!-- Tailwind CSS -->
+    <title>Заметки на карте Москвы и Подмосковья</title>
+    
+    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Three.js 3D Library -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <!-- FontAwesome Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- JSZip for Folder Archiving and Import -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+    <!-- Google Font Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-        
         body {
             font-family: 'Inter', sans-serif;
             user-select: none;
+            -webkit-user-select: none;
+            margin: 0;
+            padding: 0;
             overflow: hidden;
-            background-color: #0f172a;
+            background-color: #f3f4f6;
         }
 
-        #canvas-container {
+        #map {
             width: 100vw;
             height: 100vh;
-            position: absolute;
-            top: 0;
-            left: 0;
             z-index: 1;
+            background: #e5e7eb;
         }
 
-        .glass-panel {
-            background: rgba(15, 23, 42, 0.85);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.12);
+        /* Custom marker styling */
+        .custom-marker-icon {
+            background: transparent;
+            border: none;
+            touch-action: none;
         }
 
-        .custom-scrollbar::-webkit-scrollbar {
+        .marker-pin-inner {
+            transform-origin: bottom center;
+            will-change: transform;
+        }
+
+        /* Leaflet popup customization */
+        .leaflet-popup-content-wrapper {
+            border-radius: 1rem;
+            padding: 0.5rem;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+
+        .leaflet-popup-content {
+            margin: 0.5rem;
+            line-height: 1.4;
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
             width: 6px;
+            height: 6px;
         }
-        .custom-scrollbar::-webkit-scrollbar-track {
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 4px;
+        ::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.03);
+            border-radius: 8px;
         }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 4px;
+        ::-webkit-scrollbar-thumb {
+            background: rgba(0,0,0,0.15);
+            border-radius: 8px;
         }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-            background: rgba(255, 255, 255, 0.4);
-        }
-
-        @keyframes pulse-ring {
-            0% { transform: scale(0.98); opacity: 0.8; }
-            50% { transform: scale(1.04); opacity: 1; }
-            100% { transform: scale(0.98); opacity: 0.8; }
-        }
-
-        .pulse-btn {
-            animation: pulse-ring 2s infinite ease-in-out;
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(0,0,0,0.25);
         }
     </style>
 </head>
-<body class="text-slate-100 flex flex-col h-screen overflow-hidden">
+<body class="bg-gray-100 text-gray-800 antialiased overflow-hidden">
 
-    <!-- 3D Canvas Container -->
-    <div id="canvas-container"></div>
+    <!-- Password Screen Lock Overlay -->
+    <div id="auth-overlay" class="fixed inset-0 bg-slate-900/95 backdrop-blur-md z-[9999] flex items-center justify-center p-4 transition-opacity duration-300">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-7 text-center border border-gray-100 transform transition-transform">
+            <div class="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 text-2xl shadow-inner">
+                🔐
+            </div>
+            <h2 class="text-xl font-bold text-gray-900 mb-1" id="auth-title">Доступ защищен</h2>
+            <p class="text-xs text-gray-500 mb-6" id="auth-desc">Введите пароль для просмотра ваших заметок</p>
 
-    <!-- Top HUD Header -->
-    <header class="absolute top-4 left-4 right-4 z-10 flex flex-wrap items-center justify-between gap-3 pointer-events-none">
-        <!-- Title Badge -->
-        <div class="glass-panel px-5 py-3 rounded-2xl flex items-center space-x-3 shadow-2xl pointer-events-auto">
-            <div class="bg-amber-500 text-slate-950 p-2.5 rounded-xl text-xl font-black shadow-lg">
-                <i class="fa-solid fa-boxes-stacked"></i>
-            </div>
-            <div>
-                <h1 class="font-bold text-lg leading-tight tracking-wide text-white">Изометрический Склад</h1>
-                <p class="text-xs text-amber-400/90 font-medium">Интерактивный чертеж • Вращение 360° колесиком мыши</p>
-            </div>
-        </div>
+            <form id="auth-form" onsubmit="event.preventDefault(); verifyPassword();" class="space-y-4">
+                <div>
+                    <input type="password" id="auth-password-input" placeholder="Введите пароль..." class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-center text-gray-900 font-semibold tracking-widest text-sm transition-all">
+                    <p id="auth-error-msg" class="text-xs text-red-500 font-medium mt-2 hidden"></p>
+                </div>
 
-        <!-- Stats Bar -->
-        <div class="glass-panel px-5 py-2.5 rounded-2xl flex items-center space-x-6 text-sm pointer-events-auto shadow-2xl">
-            <div class="flex items-center space-x-2">
-                <span class="text-slate-400">Кубиков на складе:</span>
-                <span id="box-count-badge" class="font-bold text-amber-400 text-base bg-amber-500/10 px-2.5 py-0.5 rounded-lg border border-amber-500/30">0</span>
-            </div>
-            <div class="h-4 w-[1px] bg-slate-700"></div>
-            <div class="flex items-center space-x-2">
-                <span class="text-slate-400">Режим:</span>
-                <span id="mode-status" class="font-semibold text-emerald-400">Клик для перемещения</span>
+                <button type="submit" class="w-full py-3 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-semibold text-xs rounded-2xl shadow-lg shadow-blue-500/25 transition-all">
+                    Войти в систему
+                </button>
+            </form>
+
+            <div class="mt-6 pt-4 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-400 font-medium">
+                <button onclick="changeStoredPassword()" class="hover:text-blue-600 transition-colors">⚙️ Сменить пароль</button>
+                <span>Заметки на карте</span>
             </div>
         </div>
-
-        <!-- Camera Angle & View Controls -->
-        <div class="glass-panel p-1.5 rounded-2xl flex items-center space-x-1 pointer-events-auto shadow-2xl">
-            <button id="btn-rot-left" title="Повернуть на 90° влево" class="p-2.5 hover:bg-slate-700/60 active:bg-slate-700 rounded-xl transition text-slate-200 hover:text-white">
-                <i class="fa-solid fa-rotate-left text-lg"></i>
-            </button>
-            <button id="btn-rot-right" title="Повернуть на 90° вправо" class="p-2.5 hover:bg-slate-700/60 active:bg-slate-700 rounded-xl transition text-slate-200 hover:text-white">
-                <i class="fa-solid fa-rotate-right text-lg"></i>
-            </button>
-            <div class="h-4 w-[1px] bg-slate-700 my-auto"></div>
-            <button id="btn-zoom-in" title="Приблизить" class="p-2.5 hover:bg-slate-700/60 active:bg-slate-700 rounded-xl transition text-slate-200 hover:text-white">
-                <i class="fa-solid fa-magnifying-glass-plus text-lg"></i>
-            </button>
-            <button id="btn-zoom-out" title="Отдалить" class="p-2.5 hover:bg-slate-700/60 active:bg-slate-700 rounded-xl transition text-slate-200 hover:text-white">
-                <i class="fa-solid fa-magnifying-glass-minus text-lg"></i>
-            </button>
-            <div class="h-4 w-[1px] bg-slate-700 my-auto"></div>
-            <button id="btn-toggle-walls" title="Переключить высоту стен" class="p-2.5 hover:bg-amber-500/20 text-amber-400 rounded-xl transition">
-                <i class="fa-solid fa-border-all text-lg"></i>
-            </button>
-            <div class="h-4 w-[1px] bg-slate-700 my-auto"></div>
-            <button id="btn-toggle-editor" title="Редактор стен склада" class="px-3 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl transition flex items-center space-x-1.5 text-xs shadow-lg">
-                <i class="fa-solid fa-pen-ruler"></i>
-                <span id="editor-btn-text">Стены</span>
-            </button>
-        </div>
-    </header>
-
-    <!-- Floating Help Card -->
-    <div class="absolute top-24 left-4 z-10 glass-panel p-4 rounded-2xl max-w-xs text-xs space-y-2 pointer-events-auto shadow-xl hidden md:block">
-        <div class="flex justify-between items-center font-bold text-amber-400 text-sm">
-            <span><i class="fa-solid fa-circle-info mr-1.5"></i>Управление</span>
-            <button id="close-help-btn" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
-        </div>
-        <ul class="space-y-1.5 text-slate-300">
-            <li><strong class="text-amber-300">Зажатие колесика (СКМ):</strong> Вращение сцены на 360°</li>
-            <li><strong class="text-white">Клик по кубику:</strong> Выбрать для переноса/укладки</li>
-            <li><strong class="text-white">Клик по другому кубику:</strong> Поставить сверху</li>
-            <li><strong class="text-white">ПКМ / Shift+Перетаскивание:</strong> Вращать / Двигать</li>
-            <li><strong class="text-white">Колесико (прокрутка):</strong> Масштаб (зум)</li>
-        </ul>
     </div>
 
-    <!-- Interactive Wall Editor Panel (Hidden by default) -->
-    <div id="wall-editor-panel" class="absolute top-24 right-4 z-10 glass-panel p-4 rounded-2xl w-80 text-xs space-y-3 pointer-events-auto shadow-2xl hidden border-amber-500/40 border max-h-[85vh] overflow-y-auto custom-scrollbar">
-        <div class="flex justify-between items-center font-bold text-amber-400 text-sm border-b border-slate-700 pb-2">
-            <span><i class="fa-solid fa-ruler-combined mr-2"></i>Редактор Стен Склада</span>
-            <button id="close-editor-panel-btn" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+    <!-- Main Content Header Bar -->
+    <header class="absolute top-4 left-4 right-4 md:right-auto z-[1000] flex flex-wrap items-center gap-2 pointer-events-none">
+        <div class="bg-white/90 backdrop-blur-md px-4 py-2.5 rounded-2xl shadow-lg border border-gray-200/80 flex items-center gap-3 pointer-events-auto">
+            <div class="flex items-center gap-2">
+                <span class="text-xl">📍</span>
+                <h1 class="font-bold text-sm md:text-base text-gray-800 tracking-tight">Заметки на карте</h1>
+            </div>
+            <span id="notes-counter" class="text-xs font-semibold px-2.5 py-1 bg-blue-50 text-blue-600 rounded-lg border border-blue-100">
+                Заметок: 0
+            </span>
         </div>
 
-        <!-- Editor Tool Selection -->
-        <div class="space-y-1">
-            <label class="text-slate-400 font-semibold block">Инструмент:</label>
-            <div class="grid grid-cols-3 gap-1.5 bg-slate-900/80 p-1 rounded-xl">
-                <button id="tool-draw-wall" class="py-1.5 px-2 rounded-lg bg-amber-500 text-slate-950 font-bold text-center transition hover:bg-amber-400">
-                    <i class="fa-solid fa-pen text-xs block mb-0.5"></i>Стена
-                </button>
-                <button id="tool-select-wall" class="py-1.5 px-2 rounded-lg bg-slate-800 text-slate-300 font-medium text-center transition hover:bg-slate-700">
-                    <i class="fa-solid fa-hand text-xs block mb-0.5"></i>Выбор
-                </button>
-                <button id="tool-delete-wall" class="py-1.5 px-2 rounded-lg bg-slate-800 text-slate-300 font-medium text-center transition hover:bg-slate-700">
-                    <i class="fa-solid fa-eraser text-xs block mb-0.5"></i>Удалить
-                </button>
+        <!-- Search Input Bar & Dropdown -->
+        <div class="relative bg-white/90 backdrop-blur-md px-3 py-2 rounded-2xl shadow-lg border border-gray-200/80 flex items-center gap-2 pointer-events-auto min-w-[240px] sm:min-w-[300px]">
+            <span class="text-gray-400 text-xs">🔍</span>
+            <input type="text" id="map-search-input" placeholder="Поиск заметок и мест..." oninput="handleSearchInput(this.value)" onfocus="handleSearchFocus()" class="w-full bg-transparent text-xs text-gray-800 outline-none font-medium placeholder-gray-400">
+            <button id="clear-search-btn" onclick="clearSearch()" class="hidden text-gray-400 hover:text-gray-600 text-xs font-bold px-1 transition-colors">✕</button>
+
+            <!-- Search Results Dropdown Panel -->
+            <div id="search-results-dropdown" class="absolute top-full left-0 right-0 mt-2 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-gray-200/80 hidden max-h-72 overflow-y-auto p-2 z-50 flex-col gap-1.5 transition-all">
             </div>
         </div>
 
-        <!-- Wall Material Type -->
-        <div class="flex items-center justify-between bg-slate-900/50 p-2 rounded-xl border border-slate-800">
-            <span class="text-slate-300 font-medium">Тип стены:</span>
-            <select id="wall-type-select" class="bg-slate-800 border border-slate-700 text-amber-300 rounded-lg px-2 py-1 outline-none text-xs">
-                <option value="solid">Сплошная стена</option>
-                <option value="glass">Стекло / Витраж</option>
+        <!-- Map Layer / Provider Switcher -->
+        <div class="bg-white/90 backdrop-blur-md px-3 py-2 rounded-2xl shadow-lg border border-gray-200/80 flex items-center gap-2 pointer-events-auto">
+            <select id="map-provider-select" onchange="changeMapProvider(this.value)" class="bg-gray-50 border border-gray-200 text-gray-700 text-xs font-semibold rounded-xl px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer">
+                <option value="osm">🗺️ OpenStreetMap</option>
+                <option value="carto_light">🗺️ Свободная карта (Светлая)</option>
+                <option value="google_roadmap">🗺️ Google Карты</option>
+                <option value="google_satellite">🛰️ Google Спутник</option>
+                <option value="google_hybrid">🌍 Google Гибрид</option>
             </select>
         </div>
 
-        <!-- Warehouse Grid Dimensions -->
-        <div class="space-y-2 pt-1 border-t border-slate-700/60">
-            <div class="flex justify-between items-center text-slate-300">
-                <span class="font-semibold">Размеры склада (сетки):</span>
-                <span id="grid-dimensions-label" class="font-bold text-amber-400">36 x 24</span>
+        <div class="bg-white/90 backdrop-blur-md px-3 py-2 rounded-2xl shadow-lg border border-gray-200/80 flex items-center gap-2 pointer-events-auto">
+            <button onclick="selectLocalFolder()" id="folder-btn" title="Синхронизировать с папкой ПК" class="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 hover:text-amber-800 text-xs font-semibold rounded-xl transition-all border border-amber-200/80 flex items-center gap-1.5">
+                <span id="folder-status-dot" class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                📁 <span id="folder-btn-text" class="hidden sm:inline">Выбрать папку ПК</span>
+            </button>
+            <button onclick="exportNotesZip()" title="Скачать все заметки архивом ZIP" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-sm transition-all flex items-center gap-1.5">
+                📦 <span class="hidden sm:inline">Скачать ZIP</span>
+            </button>
+            <button onclick="document.getElementById('zip-import-input').click()" title="Загрузить заметки из ZIP архива" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shadow-sm transition-all flex items-center gap-1.5">
+                📥 <span class="hidden sm:inline">Импорт ZIP</span>
+            </button>
+            <button onclick="lockScreen()" title="Заблокировать доступ" class="p-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs rounded-xl transition-all flex items-center justify-center">
+                🔒
+            </button>
+            <input type="file" id="zip-import-input" accept=".zip" class="hidden" onchange="importNotesZip(this.files[0]); this.value='';">
+        </div>
+
+            </header>
+
+    <!-- Map Viewport Container -->
+    <main class="relative w-full h-screen">
+        <div id="map"></div>
+
+        <!-- Folder Status Banner Notice -->
+        <div id="folder-warning-banner" class="absolute bottom-6 left-4 z-[1000] bg-amber-50/95 backdrop-blur-md border border-amber-200/90 text-amber-900 px-3.5 py-2.5 rounded-2xl shadow-xl max-w-xs sm:max-w-sm flex items-center justify-between gap-3 transition-all duration-300">
+            <div class="flex items-center gap-2.5 text-xs font-medium">
+                <span class="text-base shrink-0">⚠️</span>
+                <div>
+                    <p class="font-bold text-amber-900 text-xs">Папка ПК не выбрана</p>
+                    <p class="text-[11px] text-amber-700 leading-tight">Заметки хранятся в браузере. Выберите папку или импортируйте ZIP для переноса.</p>
+                </div>
             </div>
-            <div class="grid grid-cols-2 gap-2">
-                <div>
-                    <label class="text-[10px] text-slate-400 block mb-1">Длина (X):</label>
-                    <input type="range" id="slider-grid-x" min="16" max="50" value="36" class="w-full accent-amber-500 cursor-pointer">
-                </div>
-                <div>
-                    <label class="text-[10px] text-slate-400 block mb-1">Ширина (Z):</label>
-                    <input type="range" id="slider-grid-z" min="12" max="36" value="24" class="w-full accent-amber-500 cursor-pointer">
-                </div>
+            <div class="flex items-center gap-1 shrink-0">
+                <button onclick="selectLocalFolder()" class="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-xl shadow-sm transition-colors whitespace-nowrap">
+                    Выбрать
+                </button>
+                <button onclick="dismissFolderWarning()" class="text-amber-500 hover:text-amber-700 p-1 rounded-lg text-xs font-bold transition-colors" title="Скрыть">
+                    ✕
+                </button>
             </div>
         </div>
 
-        <!-- Inspector for Selected Wall -->
-        <div id="selected-wall-inspector" class="bg-slate-900/70 p-2.5 rounded-xl border border-slate-700/80 space-y-2.5 hidden">
-            <div class="flex justify-between items-center">
-                <span class="font-bold text-amber-300 text-xs"><i class="fa-solid fa-sliders mr-1"></i>Свойства стены</span>
-                <span id="selected-wall-id" class="text-[10px] text-slate-400">ID #1</span>
+        <!-- Dynamic Color & Tag Filter Panel -->
+        <div id="filter-panel" class="absolute top-4 right-4 z-[1000] bg-white/95 backdrop-blur-md p-3.5 rounded-2xl shadow-xl border border-gray-200/80 hidden flex-col gap-3 max-w-[260px] max-h-[80vh] overflow-y-auto">
+            <div>
+                <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1 block mb-1.5">Фильтр по цвету</span>
+                <div id="filter-colors" class="flex flex-wrap gap-1.5 items-center"></div>
             </div>
-            <div class="grid grid-cols-2 gap-1 text-[11px] text-slate-300">
-                <div class="flex items-center"><span class="w-2 h-2 rounded-full bg-emerald-500 mr-1.5 inline-block"></span>Старт: <span id="wall-coord-start" class="text-white font-mono ml-1">(0, 0)</span></div>
-                <div class="flex items-center"><span class="w-2 h-2 rounded-full bg-rose-500 mr-1.5 inline-block"></span>Конец: <span id="wall-coord-end" class="text-white font-mono ml-1">(36, 0)</span></div>
+            <div id="filter-tags-section" class="border-t border-gray-100 pt-2 hidden">
+                <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1 block mb-1.5">Фильтр по тэгам</span>
+                <div id="filter-tags" class="flex flex-wrap gap-1.5 items-center"></div>
             </div>
-
-            <!-- Wall Length Controls -->
-            <div class="bg-slate-950/60 p-2 rounded-xl space-y-1.5 border border-slate-800">
-                <div class="flex justify-between items-center text-[11px]">
-                    <span class="text-slate-300 font-semibold">Длина стены:</span>
-                    <span id="wall-length-val" class="text-amber-400 font-bold font-mono">12 ячеек</span>
-                </div>
-                <div class="flex items-center space-x-2">
-                    <button id="btn-length-minus" title="Уменьшить длину" class="bg-slate-800 hover:bg-slate-700 text-amber-400 w-7 h-7 rounded-lg font-black text-sm flex items-center justify-center transition active:scale-95 shadow">-</button>
-                    <input type="range" id="slider-wall-length" min="1" max="50" value="10" class="w-full accent-amber-500 cursor-pointer">
-                    <button id="btn-length-plus" title="Увеличить длину" class="bg-slate-800 hover:bg-slate-700 text-amber-400 w-7 h-7 rounded-lg font-black text-sm flex items-center justify-center transition active:scale-95 shadow">+</button>
-                </div>
-            </div>
-
-            <!-- Wall Shift Nudge -->
-            <div class="space-y-1">
-                <span class="text-[10px] text-slate-400 block font-medium">Сдвиг стены целиком:</span>
-                <div class="flex items-center space-x-1">
-                    <button id="btn-nudge-left" class="flex-1 bg-slate-800 hover:bg-slate-700 py-1 rounded text-xs font-bold text-slate-200">← X-</button>
-                    <button id="btn-nudge-right" class="flex-1 bg-slate-800 hover:bg-slate-700 py-1 rounded text-xs font-bold text-slate-200">→ X+</button>
-                    <button id="btn-nudge-up" class="flex-1 bg-slate-800 hover:bg-slate-700 py-1 rounded text-xs font-bold text-slate-200">↑ Z-</button>
-                    <button id="btn-nudge-down" class="flex-1 bg-slate-800 hover:bg-slate-700 py-1 rounded text-xs font-bold text-slate-200">↓ Z+</button>
-                </div>
-            </div>
-
-            <button id="btn-delete-selected-wall" class="w-full mt-1 bg-rose-600/80 hover:bg-rose-500 text-white font-semibold py-1 rounded-lg text-xs transition">
-                <i class="fa-solid fa-trash-can mr-1"></i>Удалить стену
-            </button>
         </div>
+    </main>
 
-        <!-- Action Presets -->
-        <div class="flex space-x-2 pt-1 border-t border-slate-700/60">
-            <button id="btn-reset-walls" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold py-1.5 rounded-xl text-[11px] transition">
-                <i class="fa-solid fa-rotate-left mr-1"></i>Сброс схемы
-            </button>
-            <button id="btn-clear-all-walls" class="bg-rose-900/60 hover:bg-rose-800 text-rose-200 font-semibold px-2.5 py-1.5 rounded-xl text-[11px] transition">
-                Очистить все
-            </button>
+    <!-- Note Creation / Editing Modal -->
+    <div id="note-modal" class="fixed inset-0 bg-black/40 backdrop-blur-sm z-[2000] flex items-center justify-center p-4 hidden opacity-0 transition-opacity duration-300">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 transform scale-95 transition-transform duration-300 max-h-[90vh] overflow-y-auto" id="note-modal-content">
+            <div class="flex justify-between items-center mb-5">
+                <h2 id="modal-title-text" class="text-lg font-bold text-gray-800">Новая заметка</h2>
+                <button type="button" onclick="closeModal()" class="text-gray-400 hover:text-gray-600 focus:outline-none p-1 rounded-lg hover:bg-gray-100 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+
+            <form id="note-form" onsubmit="event.preventDefault(); saveNote();" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1.5">Заголовок</label>
+                    <input type="text" id="note-title" placeholder="Например: Любимое кафе или Патриаршие" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-gray-800 text-sm">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1.5">Описание и ссылки</label>
+                    <textarea id="note-text" rows="3" placeholder="Введите информацию или вставьте URL-ссылку..." class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all resize-none text-gray-800 text-sm"></textarea>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1.5">Цвет метки</label>
+                    <div id="color-picker-container" class="flex flex-wrap gap-2 items-center"></div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1.5">Тэги</label>
+                    <div class="flex gap-2 mb-2">
+                        <input type="text" id="note-tag-input" placeholder="Например: кафе, парк..." class="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none text-xs text-gray-800" onkeydown="if(event.key==='Enter'){event.preventDefault(); handleAddTagInput();}">
+                        <button type="button" onclick="handleAddTagInput()" class="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-xl text-xs font-semibold border border-blue-200 transition-colors shrink-0">
+                            + Добавить
+                        </button>
+                    </div>
+                    <div id="note-tags-container" class="flex flex-wrap gap-1.5 mb-2"></div>
+                    <div id="quick-tags-container" class="flex flex-wrap gap-1 items-center text-xs"></div>
+                </div>
+
+                <div>
+                    <div class="flex justify-between items-center mb-1.5">
+                        <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wider">Изображение</label>
+                        <span class="text-[10px] text-gray-400 font-normal">Ctrl+V для вставки из буфера</span>
+                    </div>
+                    
+                    <div class="space-y-2">
+                        <input type="url" id="note-image-url" placeholder="Вставьте ссылку на изображение (https://...)" class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none text-xs text-gray-800" oninput="handleImageUrlInput()">
+                        
+                        <div class="flex items-center gap-2">
+                            <label class="flex-1 cursor-pointer text-center py-2 px-3 border border-dashed border-gray-300 hover:border-blue-500 rounded-xl bg-gray-50 hover:bg-blue-50/50 text-xs font-medium text-gray-600 transition-colors">
+                                📁 Выбрать файл
+                                <input type="file" id="note-image-file" accept="image/*" class="hidden" onchange="handleImageUpload(event)">
+                            </label>
+                        </div>
+
+                        <div id="image-preview-container" class="relative hidden mt-2 rounded-xl overflow-hidden border border-gray-200 bg-gray-100/80">
+                            <img id="image-preview" src="" alt="Предпросмотр" class="w-full max-h-48 object-contain">
+                            <button type="button" onclick="removeImage()" class="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white rounded-full p-1 text-xs transition-colors shadow">
+                                ✕
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-2.5 pt-3 border-t border-gray-100">
+                    <button type="button" onclick="closeModal()" class="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded-xl transition-colors">
+                        Отмена
+                    </button>
+                    <button type="submit" id="modal-submit-btn" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-md transition-colors">
+                        Добавить на карту
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 
-    <!-- Bottom Interactive Control Toolbar -->
-    <div class="absolute bottom-5 left-1/2 -translate-x-1/2 z-10 glass-panel p-3 rounded-2xl flex flex-wrap items-center justify-center gap-3 shadow-2xl max-w-[95vw] pointer-events-auto">
-        
-        <!-- Color Picker Selection -->
-        <div class="flex items-center space-x-2 bg-slate-900/60 p-1.5 rounded-xl border border-slate-700/50">
-            <span class="text-xs text-slate-400 pl-2 font-medium">Тип груза:</span>
-            <button class="color-select-btn w-8 h-8 rounded-lg border-2 border-white transition transform hover:scale-110 shadow" data-color="#eab308" data-name="Деревянный ящик" style="background-color: #eab308;"></button>
-            <button class="color-select-btn w-8 h-8 rounded-lg border-2 border-transparent hover:border-white transition transform hover:scale-110 shadow" data-color="#3b82f6" data-name="Контейнер Standard" style="background-color: #3b82f6;"></button>
-            <button class="color-select-btn w-8 h-8 rounded-lg border-2 border-transparent hover:border-white transition transform hover:scale-110 shadow" data-color="#ef4444" data-name="Опасный груз" style="background-color: #ef4444;"></button>
-            <button class="color-select-btn w-8 h-8 rounded-lg border-2 border-transparent hover:border-white transition transform hover:scale-110 shadow" data-color="#10b981" data-name="Эко материалы" style="background-color: #10b981;"></button>
-            <button class="color-select-btn w-8 h-8 rounded-lg border-2 border-transparent hover:border-white transition transform hover:scale-110 shadow" data-color="#a855f7" data-name="Спецзаказ" style="background-color: #a855f7;"></button>
-        </div>
-
-        <div class="h-6 w-[1px] bg-slate-700 hidden sm:block"></div>
-
-        <!-- Action Buttons -->
-        <div class="flex items-center space-x-2">
-            <button id="btn-add-box" class="bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-semibold text-xs px-4 py-2.5 rounded-xl shadow-lg flex items-center space-x-2 transition">
-                <i class="fa-solid fa-plus text-sm"></i>
-                <span>Добавить кубик</span>
-            </button>
-
-            <button id="btn-toggle-forklift" class="bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-semibold text-xs px-4 py-2.5 rounded-xl shadow-lg flex items-center space-x-2 transition">
-                <i class="fa-solid fa-truck-ramp-box text-sm"></i>
-                <span id="forklift-btn-text">Погрузчик: Вкл</span>
-            </button>
-
-            <button id="btn-auto-sort" class="bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white font-semibold text-xs px-4 py-2.5 rounded-xl shadow-lg flex items-center space-x-2 transition">
-                <i class="fa-solid fa-dolly text-sm"></i>
-                <span>Авто-сортировка</span>
-            </button>
-
-            <button id="btn-clear-selected" class="bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white font-semibold text-xs px-3 py-2.5 rounded-xl shadow-lg flex items-center space-x-1.5 transition">
-                <i class="fa-solid fa-trash-can text-sm"></i>
-                <span class="hidden md:inline">Удалить</span>
-            </button>
-        </div>
-    </div>
-
-    <!-- Notification Toast Container -->
-    <div id="toast-container" class="absolute bottom-24 left-1/2 -translate-x-1/2 z-20 pointer-events-none flex flex-col items-center space-y-2"></div>
+    <!-- Toast Notifications Container -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-[3000] flex flex-col gap-2 pointer-events-none"></div>
 
     <script>
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        
-        function playSound(type) {
-            try {
-                if (!audioCtx) return;
-                if (audioCtx.state === 'suspended') {
-                    audioCtx.resume();
-                }
-                const now = audioCtx.currentTime;
-                if (type === 'select') {
-                    const osc = audioCtx.createOscillator();
-                    const gain = audioCtx.createGain();
-                    osc.type = 'sine';
-                    osc.frequency.setValueAtTime(440, now);
-                    osc.frequency.exponentialRampToValueAtTime(880, now + 0.08);
-                    gain.gain.setValueAtTime(0.12, now);
-                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
-                    osc.connect(gain);
-                    gain.connect(audioCtx.destination);
-                    osc.start(now);
-                    osc.stop(now + 0.08);
-                } else if (type === 'place') {
-                    const osc = audioCtx.createOscillator();
-                    const gain = audioCtx.createGain();
-                    osc.type = 'triangle';
-                    osc.frequency.setValueAtTime(180, now);
-                    osc.frequency.exponentialRampToValueAtTime(60, now + 0.12);
-                    gain.gain.setValueAtTime(0.25, now);
-                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
-                    osc.connect(gain);
-                    gain.connect(audioCtx.destination);
-                    osc.start(now);
-                    osc.stop(now + 0.12);
-                } else if (type === 'drive') {
-                    const osc = audioCtx.createOscillator();
-                    const gain = audioCtx.createGain();
-                    osc.type = 'sawtooth';
-                    osc.frequency.setValueAtTime(80, now);
-                    osc.frequency.linearRampToValueAtTime(140, now + 0.2);
-                    osc.frequency.linearRampToValueAtTime(70, now + 0.4);
-                    gain.gain.setValueAtTime(0.08, now);
-                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
-                    osc.connect(gain);
-                    gain.connect(audioCtx.destination);
-                    osc.start(now);
-                    osc.stop(now + 0.4);
-                } else if (type === 'wall') {
-                    const osc = audioCtx.createOscillator();
-                    const gain = audioCtx.createGain();
-                    osc.type = 'square';
-                    osc.frequency.setValueAtTime(260, now);
-                    osc.frequency.exponentialRampToValueAtTime(520, now + 0.1);
-                    gain.gain.setValueAtTime(0.1, now);
-                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
-                    osc.connect(gain);
-                    gain.connect(audioCtx.destination);
-                    osc.start(now);
-                    osc.stop(now + 0.1);
-                }
-            } catch(e) {}
-        }
+        const MOSCOW_CENTER = [55.7558, 37.6173];
+        const PRESET_COLORS = [
+            { name: 'Синий', value: '#3B82F6' },
+            { name: 'Красный', value: '#EF4444' },
+            { name: 'Зелёный', value: '#10B981' },
+            { name: 'Жёлтый', value: '#F59E0B' },
+            { name: 'Фиолетовый', value: '#8B5CF6' },
+            { name: 'Розовый', value: '#EC4899' },
+            { name: 'Оранжевый', value: '#F97316' },
+            { name: 'Серый', value: '#6B7280' }
+        ];
 
-        function showToast(text, type = 'info') {
-            const container = document.getElementById('toast-container');
-            const toast = document.createElement('div');
-            toast.className = `glass-panel px-4 py-2 rounded-xl text-xs font-semibold shadow-xl border flex items-center space-x-2 transition-all duration-300 transform translate-y-4 opacity-0 ${
-                type === 'amber' ? 'border-amber-500/50 text-amber-300' : 
-                type === 'emerald' ? 'border-emerald-500/50 text-emerald-300' : 'border-blue-500/50 text-blue-300'
-            }`;
-            toast.innerHTML = `<i class="fa-solid fa-circle-check"></i><span>${text}</span>`;
-            container.appendChild(toast);
-            
-            setTimeout(() => {
-                toast.classList.remove('translate-y-4', 'opacity-0');
-            }, 10);
-
-            setTimeout(() => {
-                toast.classList.add('opacity-0', '-translate-y-2');
-                setTimeout(() => toast.remove(), 300);
-            }, 2500);
-        }
-
-        // Configuration & Global Variables
-        let scene, camera, renderer;
-        let selectedBox = null;
-        let forkliftMesh = null;
-        let forkliftCarryingBox = null;
-        let isForkliftMode = true;
-        let wallHeightState = 1; // 0: Hidden, 1: Half, 2: Full
-        let selectedColor = '#eab308';
-        let selectedCargoName = 'Деревянный ящик';
-        
-        // Wall Editor & Blueprint State
-        let isEditMode = false;
-        let editTool = 'draw'; // 'draw' | 'select' | 'delete'
-        let currentWallType = 'solid'; // 'solid' | 'glass'
-        let drawStartPt = null;
-        let selectedWallData = null;
-        let ghostWallMesh = null;
-        let selectedWallHighlight = null;
-        let floorMesh = null;
-
-        // Warehouse Grid system
-        let GRID_SIZE_X = 36;
-        let GRID_SIZE_Z = 24;
-        const CELL_SIZE = 1.2;
-
-        // Camera Orbit Parameters for 360-degree rotation
-        let cameraTarget = new THREE.Vector3((GRID_SIZE_X * CELL_SIZE) / 2, 0, (GRID_SIZE_Z * CELL_SIZE) / 2);
-        let cameraRadius = 50;
-        let cameraTheta = Math.PI / 4; // Horizontal angle
-        let cameraPhi = Math.PI / 6;   // Vertical elevation angle (~30 deg)
-        
-        let wallList = [];
-        let nextWallId = 100;
-
-        function getInitialBlueprintWalls() {
-            return [
-                // Outer Perimeter
-                { id: 1, x1: 0, z1: 0, x2: 36, z2: 0, isGlass: false },
-                { id: 2, x1: 0, z1: 0, x2: 0, z2: 24, isGlass: false },
-                { id: 3, x1: 0, z1: 24, x2: 18, z2: 24, isGlass: false },
-                { id: 4, x1: 18, z1: 24, x2: 18, z2: 15, isGlass: false },
-                { id: 5, x1: 18, z1: 24, x2: 25, z2: 24, isGlass: false },
-                { id: 6, x1: 25, z1: 24, x2: 25, z2: 15, isGlass: false },
-                { id: 7, x1: 25, z1: 24, x2: 33, z2: 24, isGlass: false },
-                { id: 8, x1: 33, z1: 24, x2: 33, z2: 15, isGlass: false },
-                { id: 9, x1: 33, z1: 15, x2: 36, z2: 15, isGlass: false },
-                { id: 10, x1: 36, z1: 15, x2: 36, z2: 0, isGlass: false },
-
-                // Office Interior Partitions (Rooms 16, 17, 18, 22)
-                { id: 11, x1: 12, z1: 0, x2: 12, z2: 15, isGlass: false },
-                { id: 12, x1: 0, z1: 12, x2: 12, z2: 12, isGlass: true },
-                { id: 13, x1: 6, z1: 0, x2: 6, z2: 12, isGlass: true },
-                { id: 14, x1: 6, z1: 12, x2: 6, z2: 24, isGlass: false },
-
-                // Internal Staging Dividers
-                { id: 15, x1: 12, z1: 15, x2: 18, z2: 15, isGlass: false },
-                { id: 16, x1: 26, z1: 6, x2: 36, z2: 6, isGlass: false }
-            ];
-        }
-
-        const gridStacks = {};
-        const allBoxes = [];
-        const wallMeshes = [];
-        const zoneLabels = [];
-
-        // Raycasting & Interaction
-        const raycaster = new THREE.Raycaster();
-        const mouse = new THREE.Vector2();
-        let hoverMesh = null;
-
-        function updateCameraPosition() {
-            // Keep vertical angle bounded to avoid flipping
-            cameraPhi = Math.max(0.1, Math.min(Math.PI / 2 - 0.05, cameraPhi));
-            
-            camera.position.x = cameraTarget.x + cameraRadius * Math.cos(cameraPhi) * Math.sin(cameraTheta);
-            camera.position.y = cameraTarget.y + cameraRadius * Math.sin(cameraPhi);
-            camera.position.z = cameraTarget.z + cameraRadius * Math.cos(cameraPhi) * Math.cos(cameraTheta);
-            
-            camera.lookAt(cameraTarget);
-        }
-
-        function initScene() {
-            const container = document.getElementById('canvas-container');
-            
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x0f172a);
-            scene.fog = new THREE.FogExp2(0x0f172a, 0.012);
-
-            // Isometric Camera setup using Orthographic Projection
-            const aspect = window.innerWidth / window.innerHeight;
-            const d = 22;
-            camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 0.1, 1000);
-            
-            updateCameraPosition();
-
-            // Renderer setup
-            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-            renderer.shadowMap.enabled = true;
-            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-            container.appendChild(renderer.domElement);
-
-            // Lighting setup for isometric depth
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
-            scene.add(ambientLight);
-
-            const dirLight = new THREE.DirectionalLight(0xfffaed, 0.85);
-            dirLight.position.set(25, 40, 20);
-            dirLight.castShadow = true;
-            dirLight.shadow.mapSize.width = 2048;
-            dirLight.shadow.mapSize.height = 2048;
-            dirLight.shadow.camera.near = 0.5;
-            dirLight.shadow.camera.far = 150;
-            const shadowD = 35;
-            dirLight.shadow.camera.left = -shadowD;
-            dirLight.shadow.camera.right = shadowD;
-            dirLight.shadow.camera.top = shadowD;
-            dirLight.shadow.camera.bottom = -shadowD;
-            scene.add(dirLight);
-
-            const fillLight = new THREE.DirectionalLight(0x818cf8, 0.35);
-            fillLight.position.set(-20, 20, -20);
-            scene.add(fillLight);
-
-            // Create Warehouse Layout
-            buildWarehouseLayout();
-
-            // Create Interactive Hover Pointer Highlight
-            createHoverCellMesh();
-
-            // Create Animated Forklift Vehicle
-            createForklift();
-
-            // Populate initial warehouse boxes
-            populateInitialBoxes();
-
-            // Event Listeners
-            window.addEventListener('resize', onWindowResize);
-            container.addEventListener('pointerdown', onPointerDown);
-            container.addEventListener('pointermove', onPointerMove);
-
-            // Camera Controls Setup
-            setupCameraControls();
-
-            // Animation Loop
-            animate();
-        }
-
-        let cameraAngleIndex = 0;
-
-        function updateCameraAngle(step) {
-            cameraTheta += step * (Math.PI / 2);
-            updateCameraPosition();
-        }
-
-        function buildWarehouseLayout() {
-            // Main floor ground plane
-            const floorGeo = new THREE.PlaneGeometry(GRID_SIZE_X * CELL_SIZE, GRID_SIZE_Z * CELL_SIZE);
-            
-            // Texture Canvas for isometric grid
-            const floorCanvas = document.createElement('canvas');
-            floorCanvas.width = 1024;
-            floorCanvas.height = 1024;
-            const ctx = floorCanvas.getContext('2d');
-            
-            // Base floor color
-            ctx.fillStyle = '#1e293b';
-            ctx.fillRect(0, 0, 1024, 1024);
-            
-            // Tile grid lines
-            ctx.strokeStyle = '#334155';
-            ctx.lineWidth = 2;
-            const stepX = 1024 / GRID_SIZE_X;
-            const stepZ = 1024 / GRID_SIZE_Z;
-            
-            for (let x = 0; x <= 1024; x += stepX) {
-                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 1024); ctx.stroke();
+        const TILE_PROVIDERS = {
+            osm: {
+                url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                options: { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }
+            },
+            carto_light: {
+                url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+                options: { maxZoom: 19, attribution: '&copy; CARTO' }
+            },
+            google_roadmap: {
+                url: 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+                options: { maxZoom: 20, attribution: '&copy; Google Maps' }
+            },
+            google_satellite: {
+                url: 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+                options: { maxZoom: 20, attribution: '&copy; Google Maps' }
+            },
+            google_hybrid: {
+                url: 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+                options: { maxZoom: 20, attribution: '&copy; Google Maps' }
             }
-            for (let z = 0; z <= 1024; z += stepZ) {
-                ctx.beginPath(); ctx.moveTo(0, z); ctx.lineTo(1024, z); ctx.stroke();
-            }
+        };
 
-            // Office Area Floor
-            ctx.fillStyle = '#0f766e';
-            ctx.fillRect(0, 0, stepX * 12, stepZ * 12);
-            ctx.fillStyle = '#0d9488';
-            ctx.fillRect(4, 4, stepX * 12 - 8, stepZ * 12 - 8);
+        let map;
+        let currentTileLayer = null;
+        let allMarkers = [];
+        let editingNoteId = null;
+        let currentClickLatLng = null;
+        let currentFilterColor = null;
+        let currentFilterTag = null;
+        let modalTags = [];
+        let selectedColor = PRESET_COLORS[0].value;
+        let selectedImage = null;
+        let dirHandle = null;
+        let isFolderWarningDismissed = false;
+        let searchDebounceTimer = null;
 
-            // Zone Staging Yellow Hatching
-            ctx.strokeStyle = '#f59e0b';
-            ctx.lineWidth = 4;
-            ctx.strokeRect(stepX * 13, stepZ * 6, stepX * 10, stepZ * 6);
-            ctx.fillStyle = 'rgba(245, 158, 11, 0.1)';
-            ctx.fillRect(stepX * 13, stepZ * 6, stepX * 10, stepZ * 6);
+        // Password protection variables
+        let appPasswordHash = localStorage.getItem('map_notes_password_hash');
 
-            // Zone Staging Lines (Right side)
-            ctx.strokeStyle = '#3b82f6';
-            ctx.strokeRect(stepX * 26, stepZ * 6, stepX * 9, stepZ * 5);
-            ctx.fillStyle = 'rgba(59, 130, 246, 0.1)';
-            ctx.fillRect(stepX * 26, stepZ * 6, stepX * 9, stepZ * 5);
+        window.onload = function () {
+            checkPasswordProtection();
+        };
 
-            // Docks Hatching Top
-            ctx.fillStyle = 'rgba(239, 68, 68, 0.15)';
-            ctx.fillRect(stepX * 18, stepZ * 15, stepX * 7, stepZ * 9);
-            ctx.fillRect(stepX * 26, stepZ * 15, stepX * 7, stepZ * 9);
+        function checkPasswordProtection() {
+            const overlay = document.getElementById('auth-overlay');
+            const title = document.getElementById('auth-title');
+            const desc = document.getElementById('auth-desc');
+            const pwdInput = document.getElementById('auth-password-input');
 
-            const floorTexture = new THREE.CanvasTexture(floorCanvas);
-            floorTexture.wrapS = THREE.ClampToEdgeWrapping;
-            floorTexture.wrapT = THREE.ClampToEdgeWrapping;
-
-            const floorMat = new THREE.MeshStandardMaterial({
-                map: floorTexture,
-                roughness: 0.6,
-                metalness: 0.1
-            });
-
-            floorMesh = new THREE.Mesh(floorGeo, floorMat);
-            floorMesh.rotation.x = -Math.PI / 2;
-            floorMesh.position.set((GRID_SIZE_X * CELL_SIZE) / 2, 0, (GRID_SIZE_Z * CELL_SIZE) / 2);
-            floorMesh.receiveShadow = true;
-            scene.add(floorMesh);
-
-            // Build blueprint walls, racks, office furniture & zone labels
-            buildWalls();
-            buildRacks();
-            buildOfficeFurniture();
-            createZoneLabels();
-        }
-
-        function buildWalls() {
-            if (wallList.length === 0) {
-                wallList = getInitialBlueprintWalls();
-            }
-            rebuildWalls();
-        }
-
-        function rebuildWalls() {
-            wallMeshes.forEach(mesh => scene.remove(mesh));
-            wallMeshes.length = 0;
-
-            const wallMaterial = new THREE.MeshStandardMaterial({
-                color: 0x475569,
-                roughness: 0.5,
-                metalness: 0.2
-            });
-
-            const glassMaterial = new THREE.MeshPhysicalMaterial({
-                color: 0x38bdf8,
-                transparent: true,
-                opacity: 0.4,
-                roughness: 0.1,
-                transmission: 0.6
-            });
-
-            wallList.forEach(w => {
-                const dx = (w.x2 - w.x1) * CELL_SIZE;
-                const dz = (w.z2 - w.z1) * CELL_SIZE;
-                const length = Math.max(0.2, Math.sqrt(dx * dx + dz * dz));
-                const angle = Math.atan2(dz, dx);
-
-                const wallThickness = 0.25;
-                const wallHeight = 2.2;
-
-                const geo = new THREE.BoxGeometry(length, wallHeight, wallThickness);
-                const mesh = new THREE.Mesh(geo, w.isGlass ? glassMaterial : wallMaterial);
-
-                const midX = ((w.x1 + w.x2) / 2) * CELL_SIZE;
-                const midZ = ((w.z1 + w.z2) / 2) * CELL_SIZE;
-
-                mesh.position.set(midX, wallHeight / 2, midZ);
-                mesh.rotation.y = -angle;
-                mesh.castShadow = true;
-                mesh.receiveShadow = true;
-                
-                mesh.userData = { 
-                    wallData: w,
-                    isWall: true,
-                    initialHeight: wallHeight, 
-                    midY: wallHeight / 2 
-                };
-
-                const heights = [0.05, 1.0, 2.2];
-                mesh.scale.y = heights[wallHeightState] / wallHeight;
-                mesh.position.y = heights[wallHeightState] / 2;
-
-                scene.add(mesh);
-                wallMeshes.push(mesh);
-            });
-
-            if (selectedWallData) {
-                highlightSelectedWall(selectedWallData);
+            if (!appPasswordHash) {
+                // First time setup
+                title.textContent = 'Установите пароль';
+                desc.textContent = 'Придумайте пароль для защиты ваших заметок';
+                overlay.classList.remove('hidden');
+                pwdInput.focus();
+            } else if (sessionStorage.getItem('map_notes_authenticated') === 'true') {
+                overlay.classList.add('hidden');
+                initMap();
+            } else {
+                title.textContent = 'Доступ защищен';
+                desc.textContent = 'Введите пароль для входа в карту';
+                overlay.classList.remove('hidden');
+                pwdInput.focus();
             }
         }
 
-        function createGhostWallMesh() {
-            const geo = new THREE.BoxGeometry(1, 2.2, 0.25);
-            const mat = new THREE.MeshBasicMaterial({
-                color: 0xf59e0b,
-                transparent: true,
-                opacity: 0.6,
-                wireframe: true
-            });
-            ghostWallMesh = new THREE.Mesh(geo, mat);
-            ghostWallMesh.visible = false;
-            scene.add(ghostWallMesh);
+        async function hashString(str) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(str);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
         }
 
-        function updateGhostWall(gx1, gz1, gx2, gz2) {
-            if (!ghostWallMesh) createGhostWallMesh();
-
-            const dx = (gx2 - gx1) * CELL_SIZE;
-            const dz = (gz2 - gz1) * CELL_SIZE;
-            const length = Math.max(0.2, Math.sqrt(dx * dx + dz * dz));
-            const angle = Math.atan2(dz, dx);
-
-            ghostWallMesh.geometry.dispose();
-            ghostWallMesh.geometry = new THREE.BoxGeometry(length, 2.2, 0.25);
-
-            const midX = ((gx1 + gx2) / 2) * CELL_SIZE;
-            const midZ = ((gz1 + gz2) / 2) * CELL_SIZE;
-
-            ghostWallMesh.position.set(midX, 1.1, midZ);
-            ghostWallMesh.rotation.y = -angle;
-            ghostWallMesh.visible = true;
-        }
-
-        function highlightSelectedWall(w) {
-            if (selectedWallHighlight) scene.remove(selectedWallHighlight);
-            if (!w) return;
-
-            const group = new THREE.Group();
-
-            const dx = (w.x2 - w.x1) * CELL_SIZE;
-            const dz = (w.z2 - w.z1) * CELL_SIZE;
-            const length = Math.max(0.3, Math.sqrt(dx * dx + dz * dz)) + 0.1;
-            const angle = Math.atan2(dz, dx);
-
-            const geo = new THREE.BoxGeometry(length, 2.4, 0.35);
-            const mat = new THREE.MeshBasicMaterial({ color: 0xf59e0b, wireframe: true });
-            const boxMesh = new THREE.Mesh(geo, mat);
-
-            const midX = ((w.x1 + w.x2) / 2) * CELL_SIZE;
-            const midZ = ((w.z1 + w.z2) / 2) * CELL_SIZE;
-            boxMesh.position.set(midX, 1.2, midZ);
-            boxMesh.rotation.y = -angle;
-            group.add(boxMesh);
-
-            // Start endpoint marker (Green)
-            const p1Geo = new THREE.SphereGeometry(0.2, 12, 12);
-            const p1Mat = new THREE.MeshBasicMaterial({ color: 0x10b981 });
-            const p1Mesh = new THREE.Mesh(p1Geo, p1Mat);
-            p1Mesh.position.set(w.x1 * CELL_SIZE, 1.2, w.z1 * CELL_SIZE);
-            group.add(p1Mesh);
-
-            // End endpoint marker (Red)
-            const p2Geo = new THREE.SphereGeometry(0.2, 12, 12);
-            const p2Mat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
-            const p2Mesh = new THREE.Mesh(p2Geo, p2Mat);
-            p2Mesh.position.set(w.x2 * CELL_SIZE, 1.2, w.z2 * CELL_SIZE);
-            group.add(p2Mesh);
-
-            selectedWallHighlight = group;
-            scene.add(selectedWallHighlight);
-        }
-
-        function updateGridDimensions(newX, newZ) {
-            GRID_SIZE_X = parseInt(newX);
-            GRID_SIZE_Z = parseInt(newZ);
-            document.getElementById('grid-dimensions-label').textContent = `${GRID_SIZE_X} x ${GRID_SIZE_Z}`;
-
-            // Update camera center target
-            cameraTarget.set((GRID_SIZE_X * CELL_SIZE) / 2, 0, (GRID_SIZE_Z * CELL_SIZE) / 2);
-            updateCameraPosition();
-
-            if (floorMesh) scene.remove(floorMesh);
-            
-            const floorGeo = new THREE.PlaneGeometry(GRID_SIZE_X * CELL_SIZE, GRID_SIZE_Z * CELL_SIZE);
-            const floorCanvas = document.createElement('canvas');
-            floorCanvas.width = 1024;
-            floorCanvas.height = 1024;
-            const ctx = floorCanvas.getContext('2d');
-            
-            ctx.fillStyle = '#1e293b';
-            ctx.fillRect(0, 0, 1024, 1024);
-            
-            ctx.strokeStyle = '#334155';
-            ctx.lineWidth = 2;
-            const stepX = 1024 / GRID_SIZE_X;
-            const stepZ = 1024 / GRID_SIZE_Z;
-            
-            for (let x = 0; x <= 1024; x += stepX) {
-                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 1024); ctx.stroke();
-            }
-            for (let z = 0; z <= 1024; z += stepZ) {
-                ctx.beginPath(); ctx.moveTo(0, z); ctx.lineTo(1024, z); ctx.stroke();
-            }
-
-            const floorTexture = new THREE.CanvasTexture(floorCanvas);
-            const floorMat = new THREE.MeshStandardMaterial({ map: floorTexture, roughness: 0.6, metalness: 0.1 });
-            floorMesh = new THREE.Mesh(floorGeo, floorMat);
-            floorMesh.rotation.x = -Math.PI / 2;
-            floorMesh.position.set((GRID_SIZE_X * CELL_SIZE) / 2, 0, (GRID_SIZE_Z * CELL_SIZE) / 2);
-            floorMesh.receiveShadow = true;
-            scene.add(floorMesh);
-
-            showToast(`Сетка склада изменена: ${GRID_SIZE_X}x${GRID_SIZE_Z}`, 'amber');
-        }
-
-        function buildRacks() {
-            const rackMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.6, roughness: 0.3 });
-            const beamMat = new THREE.MeshStandardMaterial({ color: 0xf97316, metalness: 0.4, roughness: 0.4 });
-
-            function createRack(startX, startZ, widthUnits, depthUnits) {
-                const group = new THREE.Group();
-                const width = widthUnits * CELL_SIZE;
-                const depth = depthUnits * CELL_SIZE;
-                const height = 3.5;
-
-                const postGeo = new THREE.BoxGeometry(0.12, height, 0.12);
-                const posts = [[0, 0], [width, 0], [0, depth], [width, depth]];
-                posts.forEach(([px, pz]) => {
-                    const post = new THREE.Mesh(postGeo, rackMat);
-                    post.position.set(px, height / 2, pz);
-                    post.castShadow = true;
-                    group.add(post);
-                });
-
-                const levels = [0.8, 2.0, 3.2];
-                levels.forEach(lvl => {
-                    const shelfGeo = new THREE.BoxGeometry(width, 0.08, depth);
-                    const shelf = new THREE.Mesh(shelfGeo, beamMat);
-                    shelf.position.set(width / 2, lvl, depth / 2);
-                    shelf.castShadow = true;
-                    shelf.receiveShadow = true;
-                    group.add(shelf);
-                });
-
-                group.position.set(startX * CELL_SIZE, 0, startZ * CELL_SIZE);
-                scene.add(group);
-            }
-
-            createRack(13, 13, 4, 1.5);
-            createRack(13, 10, 4, 1.5);
-            createRack(14, 1, 5, 1.5);
-            createRack(20, 1, 5, 1.5);
-            createRack(34, 7, 1.5, 6);
-        }
-
-        function buildOfficeFurniture() {
-            const deskMat = new THREE.MeshStandardMaterial({ color: 0x334155 });
-            const chairMat = new THREE.MeshStandardMaterial({ color: 0x0f172a });
-
-            function createDesk(x, z) {
-                const group = new THREE.Group();
-                const top = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.1, 0.8), deskMat);
-                top.position.set(0, 0.7, 0);
-                group.add(top);
-
-                const legGeo = new THREE.BoxGeometry(0.08, 0.7, 0.08);
-                [[-0.6, -0.3], [0.6, -0.3], [-0.6, 0.3], [0.6, 0.3]].forEach(([lx, lz]) => {
-                    const leg = new THREE.Mesh(legGeo, deskMat);
-                    leg.position.set(lx, 0.35, lz);
-                    group.add(leg);
-                });
-
-                const chair = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), chairMat);
-                chair.position.set(0, 0.4, 0.7);
-                group.add(chair);
-
-                group.position.set(x * CELL_SIZE, 0, z * CELL_SIZE);
-                scene.add(group);
-            }
-
-            createDesk(3, 3);
-            createDesk(9, 3);
-            createDesk(3, 8);
-            createDesk(9, 8);
-        }
-
-        function createZoneLabels() {
-            const zones = [
-                { num: '16', name: 'Офис 1', x: 3, z: 3 },
-                { num: '17', name: 'Офис 2', x: 9, z: 3 },
-                { num: '18', name: 'Диспетчерская', x: 3, z: 8 },
-                { num: '22', name: 'Серверная', x: 9, z: 8 },
-                { num: '2', name: 'Зона Сортировки', x: 18, z: 9 },
-                { num: '19', name: 'Ангар Выгрузки 1', x: 21.5, z: 19 },
-                { num: '20', name: 'Ангар Выгрузки 2', x: 29.5, z: 19 },
-                { num: '14', name: 'Погрузочная Рампа', x: 30, z: 8 },
-                { num: '1', name: 'Главный Зал', x: 24, z: 3 }
-            ];
-
-            zones.forEach(z => {
-                const canvas = document.createElement('canvas');
-                canvas.width = 256;
-                canvas.height = 128;
-                const ctx = canvas.getContext('2d');
-
-                ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
-                ctx.beginPath();
-                ctx.roundRect(10, 10, 236, 108, 16);
-                ctx.fill();
-                ctx.strokeStyle = '#f59e0b';
-                ctx.lineWidth = 4;
-                ctx.stroke();
-
-                ctx.fillStyle = '#ffffff';
-                ctx.font = 'bold 36px Inter, sans-serif';
-                ctx.textAlign = 'center';
-                ctx.fillText(`№ ${z.num}`, 128, 55);
-
-                ctx.fillStyle = '#cbd5e1';
-                ctx.font = '20px Inter, sans-serif';
-                ctx.fillText(z.name, 128, 92);
-
-                const texture = new THREE.CanvasTexture(canvas);
-                const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true });
-                const sprite = new THREE.Sprite(spriteMat);
-                sprite.position.set(z.x * CELL_SIZE, 2.8, z.z * CELL_SIZE);
-                sprite.scale.set(3, 1.5, 1);
-                scene.add(sprite);
-                zoneLabels.push(sprite);
-            });
-        }
-
-        function createForklift() {
-            const group = new THREE.Group();
-            
-            const bodyMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.5, roughness: 0.3 });
-            const darkMat = new THREE.MeshStandardMaterial({ color: 0x1e293b });
-            const metalMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.8, roughness: 0.2 });
-
-            const body = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.6, 1.4), bodyMat);
-            body.position.y = 0.4;
-            body.castShadow = true;
-            group.add(body);
-
-            const roof = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.7, 0.8), darkMat);
-            roof.position.set(0, 1.0, -0.1);
-            group.add(roof);
-
-            const mast = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.4, 0.1), metalMat);
-            mast.position.set(0, 0.8, 0.75);
-            group.add(mast);
-
-            const forkProng1 = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.05, 0.8), metalMat);
-            forkProng1.position.set(-0.2, 0.15, 1.1);
-            group.add(forkProng1);
-
-            const forkProng2 = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.05, 0.8), metalMat);
-            forkProng2.position.set(0.2, 0.15, 1.1);
-            group.add(forkProng2);
-
-            const wheelGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.15, 16);
-            wheelGeo.rotateZ(Math.PI / 2);
-            [[-0.55, 0.2, 0.4], [0.55, 0.2, 0.4], [-0.55, 0.2, -0.4], [0.55, 0.2, -0.4]].forEach(([wx, wy, wz]) => {
-                const wheel = new THREE.Mesh(wheelGeo, darkMat);
-                wheel.position.set(wx, wy, wz);
-                group.add(wheel);
-            });
-
-            group.position.set(18 * CELL_SIZE, 0, 7 * CELL_SIZE);
-            scene.add(group);
-            forkliftMesh = group;
-        }
-
-        function createHoverCellMesh() {
-            const geo = new THREE.PlaneGeometry(CELL_SIZE * 0.95, CELL_SIZE * 0.95);
-            geo.rotateX(-Math.PI / 2);
-            const mat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.4, side: THREE.DoubleSide });
-            hoverMesh = new THREE.Mesh(geo, mat);
-            hoverMesh.position.set(0, 0.02, 0);
-            hoverMesh.visible = false;
-            scene.add(hoverMesh);
-        }
-
-        function createBoxMesh(colorHex, cargoName) {
-            const canvas = document.createElement('canvas');
-            canvas.width = 128;
-            canvas.height = 128;
-            const ctx = canvas.getContext('2d');
-
-            ctx.fillStyle = colorHex;
-            ctx.fillRect(0, 0, 128, 128);
-
-            ctx.strokeStyle = 'rgba(0,0,0,0.3)';
-            ctx.lineWidth = 8;
-            ctx.strokeRect(4, 4, 120, 120);
-            
-            ctx.beginPath();
-            ctx.moveTo(8, 8); ctx.lineTo(120, 120);
-            ctx.moveTo(120, 8); ctx.lineTo(8, 120);
-            ctx.lineWidth = 4;
-            ctx.stroke();
-
-            const texture = new THREE.CanvasTexture(canvas);
-            const mat = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.4, metalness: 0.1 });
-
-            const boxGeo = new THREE.BoxGeometry(CELL_SIZE * 0.85, CELL_SIZE * 0.85, CELL_SIZE * 0.85);
-            const mesh = new THREE.Mesh(boxGeo, mat);
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-
-            const outlineGeo = new THREE.BoxGeometry(CELL_SIZE * 0.9, CELL_SIZE * 0.9, CELL_SIZE * 0.9);
-            const outlineMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b, wireframe: true, visible: false });
-            const outlineMesh = new THREE.Mesh(outlineGeo, outlineMat);
-            mesh.add(outlineMesh);
-
-            mesh.userData = {
-                colorHex: colorHex,
-                cargoName: cargoName || 'Стандартный ящик',
-                outline: outlineMesh,
-                gridX: 0,
-                gridZ: 0,
-                stackHeight: 0
-            };
-
-            return mesh;
-        }
-
-        function spawnBoxAt(gx, gz, colorHex = '#eab308', name = 'Ящик') {
-            const key = `${gx},${gz}`;
-            if (!gridStacks[key]) gridStacks[key] = [];
-            
-            const stackIndex = gridStacks[key].length;
-            const box = createBoxMesh(colorHex, name);
-            
-            const boxSize = CELL_SIZE * 0.85;
-            const posY = (boxSize / 2) + (stackIndex * boxSize);
-            
-            box.position.set(gx * CELL_SIZE + CELL_SIZE / 2, posY, gz * CELL_SIZE + CELL_SIZE / 2);
-            box.userData.gridX = gx;
-            box.userData.gridZ = gz;
-            box.userData.stackHeight = stackIndex;
-
-            scene.add(box);
-            gridStacks[key].push(box);
-            allBoxes.push(box);
-
-            updateBoxCounter();
-            return box;
-        }
-
-        function populateInitialBoxes() {
-            const initialData = [
-                { x: 14, z: 7, color: '#eab308', name: 'Деревянный ящик' },
-                { x: 14, z: 7, color: '#eab308', name: 'Деревянный ящик' },
-                { x: 14, z: 7, color: '#3b82f6', name: 'Контейнер Standard' },
-                { x: 15, z: 7, color: '#3b82f6', name: 'Контейнер Standard' },
-                { x: 15, z: 7, color: '#10b981', name: 'Эко материалы' },
-                { x: 15, z: 8, color: '#ef4444', name: 'Опасный груз' },
-                { x: 16, z: 8, color: '#10b981', name: 'Эко материалы' },
-                { x: 13, z: 13, color: '#a855f7', name: 'Спецзаказ' },
-                { x: 13, z: 13, color: '#a855f7', name: 'Спецзаказ' },
-                { x: 14, z: 13, color: '#3b82f6', name: 'Контейнер Standard' },
-                { x: 15, z: 13, color: '#eab308', name: 'Деревянный ящик' },
-                { x: 21, z: 18, color: '#ef4444', name: 'Опасный груз' },
-                { x: 22, z: 18, color: '#10b981', name: 'Эко материалы' },
-                { x: 29, z: 18, color: '#3b82f6', name: 'Контейнер Standard' },
-                { x: 28, z: 8, color: '#eab308', name: 'Деревянный ящик' },
-                { x: 29, z: 8, color: '#a855f7', name: 'Спецзаказ' }
-            ];
-
-            initialData.forEach(d => spawnBoxAt(d.x, d.z, d.color, d.name));
-        }
-
-        function realignStack(gx, gz) {
-            const key = `${gx},${gz}`;
-            if (!gridStacks[key]) return;
-            const boxSize = CELL_SIZE * 0.85;
-            gridStacks[key].forEach((box, index) => {
-                box.userData.stackHeight = index;
-                const targetY = (boxSize / 2) + (index * boxSize);
-                box.position.y = targetY;
-            });
-        }
-
-        function onPointerDown(event) {
-            // Ignore UI clicks
-            if (event.target.closest('.glass-panel') || event.target.closest('button') || event.target.closest('select') || event.target.closest('input')) return;
-
-            // Ignore rotation drag button clicks (Middle button 1, Right button 2)
-            if (event.button === 1 || event.button === 2) return;
-
-            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-            raycaster.setFromCamera(mouse, camera);
-
-            // Wall Editor Mode Handling
-            if (isEditMode) {
-                handleWallEditorClick();
-                return;
-            }
-            
-            // Standard Box Raycast Selection
-            const boxIntersects = raycaster.intersectObjects(allBoxes, false);
-
-            if (boxIntersects.length > 0) {
-                const clickedBox = boxIntersects[0].object;
-                
-                if (selectedBox) {
-                    if (selectedBox === clickedBox) {
-                        // Deselect on second click
-                        selectedBox.userData.outline.material.visible = false;
-                        selectedBox = null;
-                        document.getElementById('mode-status').textContent = 'Клик для перемещения';
-                        document.getElementById('mode-status').className = 'font-semibold text-emerald-400';
-                        playSound('select');
-                        return;
-                    } else {
-                        // Stack selected box on top of clicked box
-                        const targetGx = clickedBox.userData.gridX;
-                        const targetGz = clickedBox.userData.gridZ;
-                        moveSelectedBoxTo(targetGx, targetGz);
-                        return;
-                    }
-                }
-                
-                selectedBox = clickedBox;
-                selectedBox.userData.outline.material.visible = true;
-                playSound('select');
-
-                showToast(`Выбран: ${selectedBox.userData.cargoName} (Уровень ${selectedBox.userData.stackHeight + 1})`, 'amber');
-                document.getElementById('mode-status').textContent = 'Кликните по полу или ящику для укладки';
-                document.getElementById('mode-status').className = 'font-semibold text-amber-400';
+        async function verifyPassword() {
+            const pwdInput = document.getElementById('auth-password-input');
+            const errField = document.getElementById('auth-error-msg');
+            const value = pwdInput.value.trim();
+
+            if (!value) {
+                errField.textContent = 'Пароль не может быть пустым';
+                errField.classList.remove('hidden');
                 return;
             }
 
-            // Move Box to targeted floor cell
-            const floorIntersects = raycaster.intersectObjects(scene.children, true);
-            const floorHit = floorIntersects.find(hit => hit.point);
+            const hashed = await hashString(value);
 
-            if (floorHit && selectedBox) {
-                const worldPt = floorHit.point;
-                const gx = Math.floor(worldPt.x / CELL_SIZE);
-                const gz = Math.floor(worldPt.z / CELL_SIZE);
-
-                if (gx >= 0 && gx < GRID_SIZE_X && gz >= 0 && gz < GRID_SIZE_Z) {
-                    moveSelectedBoxTo(gx, gz);
-                }
-            }
-        }
-
-        function handleWallEditorClick() {
-            const intersects = raycaster.intersectObjects(scene.children, true);
-            const floorHit = intersects.find(hit => hit.point && hit.point.y < 0.5);
-            const wallHit = intersects.find(hit => hit.object.userData && hit.object.userData.isWall);
-
-            if (editTool === 'draw' && floorHit) {
-                const gx = Math.round(floorHit.point.x / CELL_SIZE);
-                const gz = Math.round(floorHit.point.z / CELL_SIZE);
-
-                if (!drawStartPt) {
-                    drawStartPt = { x: gx, z: gz };
-                    showToast(`Точка старта стены (${gx}, ${gz}). Укажите конец.`, 'amber');
-                } else {
-                    if (drawStartPt.x !== gx || drawStartPt.z !== gz) {
-                        const newWall = {
-                            id: nextWallId++,
-                            x1: drawStartPt.x,
-                            z1: drawStartPt.z,
-                            x2: gx,
-                            z2: gz,
-                            isGlass: currentWallType === 'glass'
-                        };
-                        wallList.push(newWall);
-                        rebuildWalls();
-                        playSound('wall');
-                        showToast(`Построена стена #${newWall.id}`, 'emerald');
-                    }
-                    drawStartPt = null;
-                    if (ghostWallMesh) ghostWallMesh.visible = false;
-                }
-            } else if (editTool === 'select' && wallHit) {
-                const w = wallHit.object.userData.wallData;
-                selectWallForEditing(w);
-                playSound('select');
-            } else if (editTool === 'delete' && wallHit) {
-                const w = wallHit.object.userData.wallData;
-                const idx = wallList.indexOf(w);
-                if (idx !== -1) {
-                    wallList.splice(idx, 1);
-                    if (selectedWallData === w) {
-                        selectedWallData = null;
-                        document.getElementById('selected-wall-inspector').classList.add('hidden');
-                        if (selectedWallHighlight) scene.remove(selectedWallHighlight);
-                    }
-                    rebuildWalls();
-                    playSound('place');
-                    showToast(`Стена #${w.id} удалена`, 'amber');
-                }
-            }
-        }
-
-        function selectWallForEditing(w) {
-            selectedWallData = w;
-            highlightSelectedWall(w);
-
-            const inspector = document.getElementById('selected-wall-inspector');
-            inspector.classList.remove('hidden');
-
-            document.getElementById('selected-wall-id').textContent = `ID #${w.id}`;
-            document.getElementById('wall-coord-start').textContent = `(${w.x1}, ${w.z1})`;
-            document.getElementById('wall-coord-end').textContent = `(${w.x2}, ${w.z2})`;
-
-            const dx = w.x2 - w.x1;
-            const dz = w.z2 - w.z1;
-            const length = Math.round(Math.sqrt(dx * dx + dz * dz));
-
-            const slider = document.getElementById('slider-wall-length');
-            slider.value = length;
-            document.getElementById('wall-length-val').textContent = `${length} ячеек`;
-        }
-
-        function nudgeSelectedWall(dx, dz) {
-            if (!selectedWallData) return;
-            selectedWallData.x1 += dx;
-            selectedWallData.z1 += dz;
-            selectedWallData.x2 += dx;
-            selectedWallData.z2 += dz;
-
-            rebuildWalls();
-            selectWallForEditing(selectedWallData);
-            playSound('wall');
-        }
-
-        function updateSelectedWallLength(newLen) {
-            if (!selectedWallData) return;
-            const w = selectedWallData;
-            let dx = w.x2 - w.x1;
-            let dz = w.z2 - w.z1;
-            const currentLen = Math.sqrt(dx * dx + dz * dz);
-
-            if (currentLen < 0.01) {
-                dx = 1; dz = 0;
+            if (!appPasswordHash) {
+                // Save new password
+                localStorage.setItem('map_notes_password_hash', hashed);
+                appPasswordHash = hashed;
+                sessionStorage.setItem('map_notes_authenticated', 'true');
+                document.getElementById('auth-overlay').classList.add('hidden');
+                showToast('Пароль успешно установлен!');
+                initMap();
+            } else if (hashed === appPasswordHash) {
+                sessionStorage.setItem('map_notes_authenticated', 'true');
+                document.getElementById('auth-overlay').classList.add('hidden');
+                errField.classList.add('hidden');
+                pwdInput.value = '';
+                initMap();
             } else {
-                dx /= currentLen;
-                dz /= currentLen;
-            }
-
-            w.x2 = Math.round(w.x1 + dx * newLen);
-            w.z2 = Math.round(w.z1 + dz * newLen);
-
-            rebuildWalls();
-            selectWallForEditing(w);
-        }
-
-        function onPointerMove(event) {
-            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-            raycaster.setFromCamera(mouse, camera);
-            const intersects = raycaster.intersectObjects(scene.children, true);
-            const floorHit = intersects.find(hit => hit.point && hit.point.y < 0.5);
-
-            if (isEditMode && editTool === 'draw' && drawStartPt && floorHit) {
-                const gx = Math.round(floorHit.point.x / CELL_SIZE);
-                const gz = Math.round(floorHit.point.z / CELL_SIZE);
-                updateGhostWall(drawStartPt.x, drawStartPt.z, gx, gz);
-            }
-
-            if (floorHit && hoverMesh && !isEditMode) {
-                const gx = Math.floor(floorHit.point.x / CELL_SIZE);
-                const gz = Math.floor(floorHit.point.z / CELL_SIZE);
-
-                if (gx >= 0 && gx < GRID_SIZE_X && gz >= 0 && gz < GRID_SIZE_Z) {
-                    hoverMesh.position.set(gx * CELL_SIZE + CELL_SIZE / 2, 0.02, gz * CELL_SIZE + CELL_SIZE / 2);
-                    hoverMesh.visible = true;
-                }
-            } else if (hoverMesh) {
-                hoverMesh.visible = false;
+                errField.textContent = 'Неверный пароль. Попробуйте еще раз.';
+                errField.classList.remove('hidden');
+                pwdInput.value = '';
+                pwdInput.focus();
             }
         }
 
-        function moveSelectedBoxTo(targetGx, targetGz) {
-            if (!selectedBox) return;
+        function lockScreen() {
+            sessionStorage.removeItem('map_notes_authenticated');
+            checkPasswordProtection();
+            showToast('Экран заблокирован');
+        }
 
-            const oldGx = selectedBox.userData.gridX;
-            const oldGz = selectedBox.userData.gridZ;
-            const oldKey = `${oldGx},${oldGz}`;
-
-            if (gridStacks[oldKey]) {
-                const idx = gridStacks[oldKey].indexOf(selectedBox);
-                if (idx !== -1) gridStacks[oldKey].splice(idx, 1);
+        function changeStoredPassword() {
+            if (confirm('Вы действительно хотите сбросить пароль? Сброс потребуется подтвердить старым паролем.')) {
+                localStorage.removeItem('map_notes_password_hash');
+                sessionStorage.removeItem('map_notes_authenticated');
+                appPasswordHash = null;
+                checkPasswordProtection();
             }
-            realignStack(oldGx, oldGz);
-
-            const targetKey = `${targetGx},${targetGz}`;
-            if (!gridStacks[targetKey]) gridStacks[targetKey] = [];
-            const newStackIndex = gridStacks[targetKey].length;
-
-            const boxSize = CELL_SIZE * 0.85;
-            const targetX = targetGx * CELL_SIZE + CELL_SIZE / 2;
-            const targetZ = targetGz * CELL_SIZE + CELL_SIZE / 2;
-            const targetY = (boxSize / 2) + (newStackIndex * boxSize);
-
-            selectedBox.userData.outline.material.visible = false;
-            const movedBox = selectedBox;
-            selectedBox = null;
-
-            if (isForkliftMode && forkliftMesh) {
-                showToast('Погрузчик везет груз...', 'emerald');
-                playSound('drive');
-
-                const pickupPos = new THREE.Vector3(oldGx * CELL_SIZE + CELL_SIZE / 2, 0, oldGz * CELL_SIZE + CELL_SIZE / 2);
-                const dropoffPos = new THREE.Vector3(targetX, 0, targetZ);
-
-                let phase = 'drive_to_pickup';
-
-                const animInterval = setInterval(() => {
-                    if (phase === 'drive_to_pickup') {
-                        forkliftMesh.position.lerp(pickupPos, 0.15);
-                        forkliftMesh.lookAt(pickupPos);
-                        if (forkliftMesh.position.distanceTo(pickupPos) < 0.3) {
-                            phase = 'carry_to_dropoff';
-                            forkliftCarryingBox = movedBox;
-                        }
-                    } else if (phase === 'carry_to_dropoff') {
-                        forkliftMesh.position.lerp(dropoffPos, 0.12);
-                        forkliftMesh.lookAt(dropoffPos);
-                        movedBox.position.set(forkliftMesh.position.x, 0.9, forkliftMesh.position.z);
-                        
-                        if (forkliftMesh.position.distanceTo(dropoffPos) < 0.3) {
-                            clearInterval(animInterval);
-                            forkliftCarryingBox = null;
-                            movedBox.userData.gridX = targetGx;
-                            movedBox.userData.gridZ = targetGz;
-                            movedBox.userData.stackHeight = newStackIndex;
-                            movedBox.position.set(targetX, targetY, targetZ);
-                            gridStacks[targetKey].push(movedBox);
-                            playSound('place');
-                            showToast(`Ящик уложен в штабель (высота: ${newStackIndex + 1})`, 'emerald');
-                        }
-                    }
-                }, 30);
-
-            } else {
-                movedBox.userData.gridX = targetGx;
-                movedBox.userData.gridZ = targetGz;
-                movedBox.userData.stackHeight = newStackIndex;
-                movedBox.position.set(targetX, targetY, targetZ);
-                gridStacks[targetKey].push(movedBox);
-                playSound('place');
-                showToast(`Ящик уложен в штабель (высота: ${newStackIndex + 1})`, 'emerald');
-            }
-
-            document.getElementById('mode-status').textContent = 'Клик для перемещения';
-            document.getElementById('mode-status').className = 'font-semibold text-emerald-400';
         }
 
-        function updateBoxCounter() {
-            document.getElementById('box-count-badge').textContent = allBoxes.length;
-        }
+        function initMap() {
+            if (!map) {
+                map = L.map('map', {
+                    doubleClickZoom: false,
+                    zoomControl: false // 1. Отключаем стандартное расположение (topleft)
+                }).setView(MOSCOW_CENTER, 10);
 
-        function setupCameraControls() {
-            let isDragging = false;
-            let dragMode = 'rotate'; // 'rotate' or 'pan'
-            let prevMouseX = 0;
-            let prevMouseY = 0;
+                // 2. Устанавливаем кнопки масштаба в правый нижний угол
+                L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-            const container = document.getElementById('canvas-container');
+                const savedProvider = localStorage.getItem('map_provider') || 'osm';
+                const selectEl = document.getElementById('map-provider-select');
+                if (selectEl) selectEl.value = savedProvider;
+                changeMapProvider(savedProvider);
 
-            // Prevent middle-click scroll auto-scroll icon
-            container.addEventListener('auxclick', (e) => {
-                if (e.button === 1) e.preventDefault();
-            });
-
-            container.addEventListener('mousedown', (e) => {
-                if (e.button === 1) { // Middle Mouse Button (Mouse Wheel click) -> 360 Rotation
-                    e.preventDefault();
-                    isDragging = true;
-                    dragMode = 'rotate';
-                    prevMouseX = e.clientX;
-                    prevMouseY = e.clientY;
-                } else if (e.button === 2) { // Right Click -> 360 Rotation
-                    e.preventDefault();
-                    isDragging = true;
-                    dragMode = 'rotate';
-                    prevMouseX = e.clientX;
-                    prevMouseY = e.clientY;
-                } else if (e.shiftKey && e.button === 0) { // Shift + Left Click -> Pan
-                    isDragging = true;
-                    dragMode = 'pan';
-                    prevMouseX = e.clientX;
-                    prevMouseY = e.clientY;
-                }
-            });
-
-            window.addEventListener('mousemove', (e) => {
-                if (isDragging) {
-                    const deltaX = e.clientX - prevMouseX;
-                    const deltaY = e.clientY - prevMouseY;
-
-                    if (dragMode === 'rotate') {
-                        // 360-degree Orbit Rotation
-                        cameraTheta -= deltaX * 0.008;
-                        cameraPhi += deltaY * 0.008;
-                        updateCameraPosition();
-                    } else if (dragMode === 'pan') {
-                        // Pan camera target
-                        const panSpeed = 0.04;
-                        cameraTarget.x -= deltaX * panSpeed * Math.cos(cameraTheta);
-                        cameraTarget.z += deltaX * panSpeed * Math.sin(cameraTheta);
-                        cameraTarget.x += deltaY * panSpeed * Math.sin(cameraTheta);
-                        cameraTarget.z += deltaY * panSpeed * Math.cos(cameraTheta);
-                        updateCameraPosition();
-                    }
-
-                    prevMouseX = e.clientX;
-                    prevMouseY = e.clientY;
-                }
-            });
-
-            window.addEventListener('mouseup', () => {
-                isDragging = false;
-            });
-
-            container.addEventListener('contextmenu', (e) => e.preventDefault());
-
-            // Mouse Wheel Zoom
-            container.addEventListener('wheel', (e) => {
-                e.preventDefault();
-                camera.zoom = Math.max(0.4, Math.min(2.5, camera.zoom - e.deltaY * 0.0015));
-                camera.updateProjectionMatrix();
-            }, { passive: false });
-        }
-
-        function setupUIHandlers() {
-            // Camera Navigation buttons
-            document.getElementById('btn-rot-left').onclick = () => updateCameraAngle(1);
-            document.getElementById('btn-rot-right').onclick = () => updateCameraAngle(-1);
-            
-            document.getElementById('btn-zoom-in').onclick = () => {
-                camera.zoom = Math.min(2.5, camera.zoom + 0.2);
-                camera.updateProjectionMatrix();
-            };
-            document.getElementById('btn-zoom-out').onclick = () => {
-                camera.zoom = Math.max(0.4, camera.zoom - 0.2);
-                camera.updateProjectionMatrix();
-            };
-
-            // Toggle Wall Heights
-            document.getElementById('btn-toggle-walls').onclick = () => {
-                wallHeightState = (wallHeightState + 1) % 3;
-                const heights = [0.05, 1.0, 2.2];
-                const labels = ['Стены: Скрыты', 'Стены: Низкие', 'Стены: Полные'];
-                
-                wallMeshes.forEach(w => {
-                    w.scale.y = heights[wallHeightState] / w.userData.initialHeight;
-                    w.position.y = heights[wallHeightState] / 2;
-                });
-                showToast(labels[wallHeightState], 'amber');
-            };
-
-            // Wall Editor Panel Toggle
-            document.getElementById('btn-toggle-editor').onclick = () => {
-                isEditMode = !isEditMode;
-                const panel = document.getElementById('wall-editor-panel');
-                const btnText = document.getElementById('editor-btn-text');
-                
-                if (isEditMode) {
-                    panel.classList.remove('hidden');
-                    btnText.textContent = 'Закрыть';
-                    document.getElementById('mode-status').textContent = 'Режим редактора стен';
-                    document.getElementById('mode-status').className = 'font-semibold text-amber-400';
-                    showToast('Режим редактирования стен включен', 'amber');
-                } else {
-                    panel.classList.add('hidden');
-                    btnText.textContent = 'Стены';
-                    document.getElementById('mode-status').textContent = 'Клик для перемещения';
-                    document.getElementById('mode-status').className = 'font-semibold text-emerald-400';
-                    if (ghostWallMesh) ghostWallMesh.visible = false;
-                    drawStartPt = null;
-                }
-            };
-
-            document.getElementById('close-editor-panel-btn').onclick = () => {
-                document.getElementById('btn-toggle-editor').click();
-            };
-
-            // Tool Buttons Selection
-            const toolDrawBtn = document.getElementById('tool-draw-wall');
-            const toolSelectBtn = document.getElementById('tool-select-wall');
-            const toolDeleteBtn = document.getElementById('tool-delete-wall');
-
-            function setActiveTool(tool) {
-                editTool = tool;
-                [toolDrawBtn, toolSelectBtn, toolDeleteBtn].forEach(b => {
-                    b.className = "py-1.5 px-2 rounded-lg bg-slate-800 text-slate-300 font-medium text-center transition hover:bg-slate-700";
+                map.on('dblclick', function (e) {
+                    currentClickLatLng = e.latlng;
+                    openModal();
                 });
 
-                if (tool === 'draw') toolDrawBtn.className = "py-1.5 px-2 rounded-lg bg-amber-500 text-slate-950 font-bold text-center transition hover:bg-amber-400";
-                if (tool === 'select') toolSelectBtn.className = "py-1.5 px-2 rounded-lg bg-amber-500 text-slate-950 font-bold text-center transition hover:bg-amber-400";
-                if (tool === 'delete') toolDeleteBtn.className = "py-1.5 px-2 rounded-lg bg-rose-600 text-white font-bold text-center transition hover:bg-rose-500";
-            }
+                document.addEventListener('keydown', function (e) {
+                    if (e.key === 'Escape') {
+                        closeModal();
+                        if (map) map.closePopup();
+                    }
+                });
 
-            toolDrawBtn.onclick = () => setActiveTool('draw');
-            toolSelectBtn.onclick = () => setActiveTool('select');
-            toolDeleteBtn.onclick = () => setActiveTool('delete');
 
-            document.getElementById('wall-type-select').onchange = (e) => {
-                currentWallType = e.target.value;
-            };
+                document.addEventListener('paste', function (e) {
+                    const modal = document.getElementById('note-modal');
+                    if (modal.classList.contains('hidden')) return;
 
-            // Grid Size Sliders
-            document.getElementById('slider-grid-x').oninput = (e) => {
-                updateGridDimensions(e.target.value, document.getElementById('slider-grid-z').value);
-            };
-            document.getElementById('slider-grid-z').oninput = (e) => {
-                updateGridDimensions(document.getElementById('slider-grid-x').value, e.target.value);
-            };
-
-            // Inspector Controls
-            document.getElementById('btn-nudge-left').onclick = () => nudgeSelectedWall(-1, 0);
-            document.getElementById('btn-nudge-right').onclick = () => nudgeSelectedWall(1, 0);
-            document.getElementById('btn-nudge-up').onclick = () => nudgeSelectedWall(0, -1);
-            document.getElementById('btn-nudge-down').onclick = () => nudgeSelectedWall(0, 1);
-
-            const lengthSlider = document.getElementById('slider-wall-length');
-            lengthSlider.oninput = (e) => {
-                const val = parseInt(e.target.value);
-                document.getElementById('wall-length-val').textContent = `${val} ячеек`;
-                updateSelectedWallLength(val);
-            };
-
-            document.getElementById('btn-length-minus').onclick = () => {
-                lengthSlider.value = Math.max(1, parseInt(lengthSlider.value) - 1);
-                lengthSlider.dispatchEvent(new Event('input'));
-            };
-            document.getElementById('btn-length-plus').onclick = () => {
-                lengthSlider.value = parseInt(lengthSlider.value) + 1;
-                lengthSlider.dispatchEvent(new Event('input'));
-            };
-
-            document.getElementById('btn-delete-selected-wall').onclick = () => {
-                if (selectedWallData) {
-                    const idx = wallList.indexOf(selectedWallData);
-                    if (idx !== -1) wallList.splice(idx, 1);
-                    selectedWallData = null;
-                    document.getElementById('selected-wall-inspector').classList.add('hidden');
-                    if (selectedWallHighlight) scene.remove(selectedWallHighlight);
-                    rebuildWalls();
-                    playSound('place');
-                    showToast('Стена удалена', 'amber');
-                }
-            };
-
-            document.getElementById('btn-reset-walls').onclick = () => {
-                wallList = getInitialBlueprintWalls();
-                rebuildWalls();
-                showToast('Восстановлена стандартная схема склада', 'amber');
-            };
-
-            document.getElementById('btn-clear-all-walls').onclick = () => {
-                wallList = [];
-                selectedWallData = null;
-                document.getElementById('selected-wall-inspector').classList.add('hidden');
-                if (selectedWallHighlight) scene.remove(selectedWallHighlight);
-                rebuildWalls();
-                showToast('Все стены удалены', 'amber');
-            };
-
-            // Cargo Color Selection
-            document.querySelectorAll('.color-select-btn').forEach(btn => {
-                btn.onclick = () => {
-                    document.querySelectorAll('.color-select-btn').forEach(b => b.classList.replace('border-white', 'border-transparent'));
-                    btn.classList.replace('border-transparent', 'border-white');
-                    selectedColor = btn.dataset.color;
-                    selectedCargoName = btn.dataset.name;
-                    showToast(`Выбран тип: ${selectedCargoName}`);
-                };
-            });
-
-            // Add Box Button
-            document.getElementById('btn-add-box').onclick = () => {
-                let spawned = false;
-                for (let gz = 6; gz <= 11; gz++) {
-                    for (let gx = 13; gx <= 22; gx++) {
-                        const key = `${gx},${gz}`;
-                        if (!gridStacks[key] || gridStacks[key].length < 3) {
-                            spawnBoxAt(gx, gz, selectedColor, selectedCargoName);
-                            playSound('place');
-                            showToast(`Добавлен ${selectedCargoName}!`, 'emerald');
-                            spawned = true;
+                    const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+                    for (let index = 0; index < items.length; index++) {
+                        const item = items[index];
+                        if (item.type.indexOf('image') !== -1) {
+                            const blob = item.getAsFile();
+                            const reader = new FileReader();
+                            reader.onload = function (event) {
+                                selectedImage = event.target.result;
+                                showImagePreview(selectedImage);
+                                showToast('Изображение вставлено из буфера');
+                            };
+                            reader.readAsDataURL(blob);
                             break;
                         }
                     }
-                    if (spawned) break;
-                }
-            };
-
-            // Forklift Toggle
-            document.getElementById('btn-toggle-forklift').onclick = () => {
-                isForkliftMode = !isForkliftMode;
-                const txt = document.getElementById('forklift-btn-text');
-                txt.textContent = isForkliftMode ? 'Погрузчик: Вкл' : 'Погрузчик: Выкл';
-                showToast(isForkliftMode ? 'Режим погрузчика включен' : 'Быстрое перемещение включено');
-            };
-
-            // Delete Box Button
-            document.getElementById('btn-clear-selected').onclick = () => {
-                if (selectedBox) {
-                    const gx = selectedBox.userData.gridX;
-                    const gz = selectedBox.userData.gridZ;
-                    const key = `${gx},${gz}`;
-
-                    if (gridStacks[key]) {
-                        const idx = gridStacks[key].indexOf(selectedBox);
-                        if (idx !== -1) gridStacks[key].splice(idx, 1);
-                    }
-
-                    const allIdx = allBoxes.indexOf(selectedBox);
-                    if (allIdx !== -1) allBoxes.splice(allIdx, 1);
-
-                    scene.remove(selectedBox);
-                    selectedBox = null;
-                    realignStack(gx, gz);
-                    updateBoxCounter();
-                    playSound('place');
-                    showToast('Кубик удален', 'amber');
-                } else {
-                    showToast('Сначала выберите кубик кликом!');
-                }
-            };
-
-            // Auto-sort Boxes
-            document.getElementById('btn-auto-sort').onclick = () => {
-                showToast('Автоматическая сортировка по стеллажам...', 'amber');
-                playSound('drive');
-
-                const rackPositions = [
-                    { x: 13, z: 13 }, { x: 14, z: 13 }, { x: 15, z: 13 },
-                    { x: 14, z: 1 }, { x: 15, z: 1 }, { x: 20, z: 1 }, { x: 21, z: 1 }
-                ];
-
-                allBoxes.forEach((box, i) => {
-                    const targetCell = rackPositions[i % rackPositions.length];
-                    const oldKey = `${box.userData.gridX},${box.userData.gridZ}`;
-                    
-                    if (gridStacks[oldKey]) {
-                        const idx = gridStacks[oldKey].indexOf(box);
-                        if (idx !== -1) gridStacks[oldKey].splice(idx, 1);
-                    }
-
-                    const targetKey = `${targetCell.x},${targetCell.z}`;
-                    if (!gridStacks[targetKey]) gridStacks[targetKey] = [];
-                    const stackHeight = gridStacks[targetKey].length;
-
-                    box.userData.gridX = targetCell.x;
-                    box.userData.gridZ = targetCell.z;
-                    box.userData.stackHeight = stackHeight;
-                    gridStacks[targetKey].push(box);
-
-                    const boxSize = CELL_SIZE * 0.85;
-                    box.position.set(
-                        targetCell.x * CELL_SIZE + CELL_SIZE / 2,
-                        (boxSize / 2) + (stackHeight * boxSize),
-                        targetCell.z * CELL_SIZE + CELL_SIZE / 2
-                    );
                 });
-            };
 
-            document.getElementById('close-help-btn').onclick = (e) => {
-                e.target.closest('.glass-panel').remove();
-            };
-        }
-
-        function onWindowResize() {
-            const aspect = window.innerWidth / window.innerHeight;
-            const d = 22;
-            camera.left = -d * aspect;
-            camera.right = d * aspect;
-            camera.top = d;
-            camera.bottom = -d;
-            camera.updateProjectionMatrix();
-
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        }
-
-        function animate() {
-            requestAnimationFrame(animate);
-
-            if (selectedBox && !forkliftCarryingBox) {
-                const boxSize = CELL_SIZE * 0.85;
-                const baseStackY = (boxSize / 2) + (selectedBox.userData.stackHeight * boxSize);
-                selectedBox.position.y = baseStackY + Math.sin(Date.now() * 0.008) * 0.05;
+                renderPresetColorPicker();
+                loadFromLocalStorage();
+                updateFolderWarningVisibility();
             }
 
-            renderer.render(scene, camera);
+            setTimeout(() => {
+                if (map) map.invalidateSize();
+            }, 200);
         }
 
-        window.onload = () => {
-            initScene();
-            setupUIHandlers();
-        };
+        function changeMapProvider(providerKey) {
+            if (!map) return;
+            if (currentTileLayer) {
+                map.removeLayer(currentTileLayer);
+            }
+            const provider = TILE_PROVIDERS[providerKey] || TILE_PROVIDERS.osm;
+            currentTileLayer = L.tileLayer(provider.url, provider.options).addTo(map);
+            localStorage.setItem('map_provider', providerKey);
+        }
+
+        function handleSearchFocus() {
+            const input = document.getElementById('map-search-input');
+            if (input && input.value.trim()) {
+                handleSearchInput(input.value);
+            }
+        }
+
+        function clearSearch() {
+            const input = document.getElementById('map-search-input');
+            const clearBtn = document.getElementById('clear-search-btn');
+            const dropdown = document.getElementById('search-results-dropdown');
+            if (input) input.value = '';
+            if (clearBtn) clearBtn.classList.add('hidden');
+            if (dropdown) {
+                dropdown.classList.add('hidden');
+                dropdown.innerHTML = '';
+            }
+        }
+
+        function handleSearchInput(query) {
+            const clearBtn = document.getElementById('clear-search-btn');
+            const dropdown = document.getElementById('search-results-dropdown');
+            const q = query.trim().toLowerCase();
+
+            if (!q) {
+                clearSearch();
+                return;
+            }
+
+            if (clearBtn) clearBtn.classList.remove('hidden');
+
+            if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+
+            const matchedNotes = allMarkers.filter(m => {
+                const titleMatch = (m.title || '').toLowerCase().includes(q);
+                const textMatch = (m.text || '').toLowerCase().includes(q);
+                const tagMatch = Array.isArray(m.tags) && m.tags.some(t => t.toLowerCase().includes(q));
+                return titleMatch || textMatch || tagMatch;
+            });
+
+            renderSearchResults(matchedNotes, [], true);
+
+            searchDebounceTimer = setTimeout(async () => {
+                try {
+                    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&accept-language=ru&limit=5`);
+                    if (res.ok) {
+                        const locations = await res.json();
+                        renderSearchResults(matchedNotes, locations, false);
+                    }
+                } catch (e) {
+                    console.warn("Geocoding search failed:", e);
+                }
+            }, 350);
+        }
+
+        function renderSearchResults(notes, locations = [], isLoadingGeo = false) {
+            const dropdown = document.getElementById('search-results-dropdown');
+            if (!dropdown) return;
+
+            if (notes.length === 0 && locations.length === 0 && !isLoadingGeo) {
+                dropdown.innerHTML = `<div class="p-2 text-center text-xs text-gray-400 font-medium">Ничего не найдено</div>`;
+                dropdown.classList.remove('hidden');
+                return;
+            }
+
+            let html = '';
+
+            if (notes.length > 0) {
+                html += `<div class="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-2 pt-1 pb-0.5">Заметки на карте (${notes.length})</div>`;
+                notes.forEach(n => {
+                    html += `
+                        <button onclick="zoomToNote(${n.id})" class="w-full text-left p-2 hover:bg-blue-50/80 rounded-xl transition-colors flex items-center justify-between group">
+                            <div class="flex items-center gap-2 overflow-hidden">
+                                <span class="w-3 h-3 rounded-full shrink-0" style="background-color: ${n.color}"></span>
+                                <div class="truncate">
+                                    <p class="text-xs font-semibold text-gray-800 truncate group-hover:text-blue-600">${escapeHtml(n.title)}</p>
+                                    ${n.text ? `<p class="text-[11px] text-gray-500 truncate">${escapeHtml(n.text)}</p>` : ''}
+                                </div>
+                            </div>
+                            <span class="text-[10px] text-gray-400 shrink-0 ml-2">📍 Перейти</span>
+                        </button>
+                    `;
+                });
+            }
+
+            if (locations.length > 0) {
+                html += `<div class="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-2 pt-2 pb-0.5 border-t border-gray-100">Места и адреса</div>`;
+                locations.forEach(loc => {
+                    const lat = parseFloat(loc.lat);
+                    const lon = parseFloat(loc.lon);
+                    html += `
+                        <button onclick="zoomToLocation(${lat}, ${lon}, '${escapeHtml(loc.display_name).replace(/'/g, "\\'")}')" class="w-full text-left p-2 hover:bg-emerald-50/80 rounded-xl transition-colors flex items-center justify-between group">
+                            <div class="flex items-center gap-2 overflow-hidden">
+                                <span class="text-xs shrink-0">🌍</span>
+                                <p class="text-xs font-medium text-gray-700 truncate group-hover:text-emerald-700">${escapeHtml(loc.display_name)}</p>
+                            </div>
+                            <span class="text-[10px] text-emerald-600 font-semibold shrink-0 ml-2">Показать</span>
+                        </button>
+                    `;
+                });
+            } else if (isLoadingGeo) {
+                html += `<div class="p-2 text-center text-[11px] text-gray-400 font-medium">Поиск адресов...</div>`;
+            }
+
+            dropdown.innerHTML = html;
+            dropdown.classList.remove('hidden');
+        }
+
+        function zoomToNote(id) {
+            const note = allMarkers.find(m => m.id === id);
+            if (note && map) {
+                map.flyTo([note.lat, note.lng], 16, { duration: 1 });
+                note.marker.openPopup();
+                const dropdown = document.getElementById('search-results-dropdown');
+                if (dropdown) dropdown.classList.add('hidden');
+            }
+        }
+
+        function zoomToLocation(lat, lng, name) {
+            if (map) {
+                map.flyTo([lat, lng], 16, { duration: 1 });
+                showToast(`Переход к: ${name.split(',')[0]}`);
+                const dropdown = document.getElementById('search-results-dropdown');
+                if (dropdown) dropdown.classList.add('hidden');
+            }
+        }
+
+        document.addEventListener('click', function (e) {
+            const searchContainer = document.getElementById('map-search-input')?.closest('.relative');
+            if (searchContainer && !searchContainer.contains(e.target)) {
+                const dropdown = document.getElementById('search-results-dropdown');
+                if (dropdown) dropdown.classList.add('hidden');
+            }
+        });
+
+        function createSvgIcon(color, isUnlocked = false) {
+            const pulseClass = isUnlocked ? 'scale-125 -translate-y-2 drop-shadow-xl' : '';
+            return `
+                <div class="marker-pin-inner transition-all duration-300 ease-out transform ${pulseClass} flex items-center justify-center">
+                    <svg width="32" height="48" viewBox="0 0 32 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M16 0C7.163 0 0 7.163 0 16C0 28 16 48 16 48C16 48 32 28 32 16C32 7.163 24.837 0 16 0Z" fill="${color}"/>
+                        <circle cx="16" cy="16" r="6" fill="white"/>
+                    </svg>
+                </div>
+            `;
+        }
+
+        function setupLongPressDrag(marker, noteData) {
+            let pressTimer = null;
+            let isDraggingActive = false;
+            let startPos = null;
+
+            function startPress(e) {
+                const oe = e.originalEvent || e;
+                if (oe.button && oe.button !== 0) return;
+
+                const clientX = oe.clientX || (oe.touches && oe.touches[0] ? oe.touches[0].clientX : 0);
+                const clientY = oe.clientY || (oe.touches && oe.touches[0] ? oe.touches[0].clientY : 0);
+                
+                startPos = { x: clientX, y: clientY };
+                isDraggingActive = false;
+
+                pressTimer = setTimeout(() => {
+                    isDraggingActive = true;
+                    
+                    const unlockedIcon = L.divIcon({
+                        className: 'custom-marker-icon',
+                        html: createSvgIcon(noteData.color, true),
+                        iconSize: [32, 48],
+                        iconAnchor: [16, 48],
+                        popupAnchor: [0, -42]
+                    });
+                    marker.setIcon(unlockedIcon);
+
+                    if (map.dragging) map.dragging.disable();
+                    map.closePopup();
+                    showToast('Маркер разблокирован! Перетащите его в нужное место');
+
+                    window.addEventListener('mousemove', onWindowMove);
+                    window.addEventListener('touchmove', onWindowMove, { passive: false });
+                    window.addEventListener('mouseup', onWindowUp);
+                    window.addEventListener('touchend', onWindowUp);
+                    window.addEventListener('touchcancel', onWindowUp);
+                }, 500);
+            }
+
+            function cancelPress() {
+                if (pressTimer) {
+                    clearTimeout(pressTimer);
+                    pressTimer = null;
+                }
+            }
+
+            function movePress(e) {
+                if (!pressTimer || isDraggingActive) return;
+                const oe = e.originalEvent || e;
+                const currentX = oe.clientX || (oe.touches && oe.touches[0] ? oe.touches[0].clientX : 0);
+                const currentY = oe.clientY || (oe.touches && oe.touches[0] ? oe.touches[0].clientY : 0);
+                if (startPos && Math.hypot(currentX - startPos.x, currentY - startPos.y) > 10) {
+                    cancelPress();
+                }
+            }
+
+            function onWindowMove(e) {
+                if (!isDraggingActive) return;
+                if (e.preventDefault && e.cancelable) e.preventDefault();
+                
+                const latlng = map.mouseEventToLatLng(e);
+                if (latlng) {
+                    marker.setLatLng(latlng);
+                }
+            }
+
+            async function onWindowUp(e) {
+                cancelPress();
+                if (!isDraggingActive) return;
+                
+                isDraggingActive = false;
+                
+                window.removeEventListener('mousemove', onWindowMove);
+                window.removeEventListener('touchmove', onWindowMove);
+                window.removeEventListener('mouseup', onWindowUp);
+                window.removeEventListener('touchend', onWindowUp);
+                window.removeEventListener('touchcancel', onWindowUp);
+
+                if (map.dragging) map.dragging.enable();
+
+                const defaultIcon = L.divIcon({
+                    className: 'custom-marker-icon',
+                    html: createSvgIcon(noteData.color, false),
+                    iconSize: [32, 48],
+                    iconAnchor: [16, 48],
+                    popupAnchor: [0, -42]
+                });
+                marker.setIcon(defaultIcon);
+
+                const newLatLng = marker.getLatLng();
+                noteData.lat = newLatLng.lat;
+                noteData.lng = newLatLng.lng;
+
+                marker.setPopupContent(createPopupContent(noteData));
+                saveToLocalStorage();
+                await saveNoteToLocalFolder(noteData);
+                showToast('Заметка перемещена');
+            }
+
+            marker.on('mousedown touchstart', startPress);
+            marker.on('mousemove touchmove', movePress);
+            marker.on('mouseup touchend touchcancel', cancelPress);
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        function linkifyAndEscape(text) {
+            if (!text) return '';
+            const urlPattern = /(\b(https?):\/\/[[-a-zA-Z0-9+&@#\/%?=~_|!:,.;]*[-a-zA-Z0-9+&@#\/%=~_|])/ig;
+            const parts = text.split(urlPattern);
+            let result = '';
+
+            for (let i = 0; i < text.length;) {
+                const match = urlPattern.exec(text);
+                if (!match) {
+                    result += escapeHtml(text.slice(i));
+                    break;
+                }
+                result += escapeHtml(text.slice(i, match.index));
+                const url = match[0];
+                result += `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline font-semibold hover:text-blue-800 break-all">${escapeHtml(url)}</a>`;
+                i = match.index + url.length;
+            }
+            return result.replace(/\n/g, '<br>');
+        }
+
+        function sanitizeFolderName(name) {
+            return (name || 'note').replace(/[\/\\?%*:|"<>]/g, '_').trim();
+        }
+
+        function createPopupContent(note) {
+            return `
+                <div class="p-1 min-w-[220px] max-w-[280px]">
+                    <div class="flex items-center gap-2 mb-2 pb-1 border-b border-gray-100">
+                        <span class="w-3 h-3 rounded-full shrink-0 shadow-sm" style="background-color: ${note.color}"></span>
+                        <h3 class="font-bold text-gray-800 text-sm truncate">${escapeHtml(note.title)}</h3>
+                    </div>
+                    ${note.image ? `
+                        <div class="mb-2 rounded-xl overflow-hidden border border-gray-100 shadow-sm bg-gray-100/80">
+                            <img src="${note.image}" alt="Изображение" class="w-full max-h-52 object-contain" onerror="this.parentElement.style.display='none'"/>
+                        </div>
+                    ` : ''}
+                    ${note.tags && note.tags.length > 0 ? `
+                        <div class="flex flex-wrap gap-1 mb-2">
+                            ${note.tags.map(t => `<span class="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-semibold rounded-md border border-blue-100">#${escapeHtml(t)}</span>`).join('')}
+                        </div>
+                    ` : ''}
+                    ${note.text 
+                        ? `<div class="text-xs text-gray-600 leading-relaxed max-h-36 overflow-y-auto break-words mb-3">${linkifyAndEscape(note.text)}</div>` 
+                        : `<p class="text-xs text-gray-400 italic mb-3">Нет описания</p>`
+                    }
+                    <div class="pt-2 border-t border-gray-100 flex justify-between items-center">
+                        <button onclick="handleEditNote(${note.id})" class="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 focus:outline-none">
+                            ✏️ Изменить
+                        </button>
+                        <button onclick="handleDeleteNote(${note.id})" class="text-xs text-red-500 hover:text-red-700 font-semibold focus:outline-none">
+                            🗑️ Удалить
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderPresetColorPicker() {
+            const container = document.getElementById('color-picker-container');
+            if (!container) return;
+
+            container.innerHTML = PRESET_COLORS.map(c => `
+                <button type="button" onclick="selectPresetColor('${c.value}')" class="color-picker-btn w-7 h-7 rounded-full border-2 transition-transform hover:scale-110 flex items-center justify-center ${selectedColor === c.value ? 'border-gray-900 scale-110 shadow-md' : 'border-white'}" style="background-color: ${c.value};" title="${c.name}">
+                    ${selectedColor === c.value ? '<span class="text-white text-xs font-bold">✓</span>' : ''}
+                </button>
+            `).join('');
+        }
+
+        function selectPresetColor(color) {
+            selectedColor = color;
+            renderPresetColorPicker();
+        }
+
+        function handleAddTagInput() {
+            const input = document.getElementById('note-tag-input');
+            if (!input) return;
+            const val = input.value.trim();
+            if (val) {
+                addModalTag(val);
+                input.value = '';
+            }
+        }
+
+        function addModalTag(tagName) {
+            const clean = tagName.trim().replace(/^#/, '');
+            if (clean && !modalTags.includes(clean)) {
+                modalTags.push(clean);
+                renderModalTags();
+            }
+        }
+
+        function removeModalTag(tagName) {
+            modalTags = modalTags.filter(t => t !== tagName);
+            renderModalTags();
+        }
+
+        function renderModalTags() {
+            const container = document.getElementById('note-tags-container');
+            if (container) {
+                container.innerHTML = modalTags.map(t => `
+                    <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-xs font-medium">
+                        #${escapeHtml(t)}
+                        <button type="button" onclick="removeModalTag('${escapeHtml(t)}')" class="text-blue-400 hover:text-blue-600 focus:outline-none font-bold text-xs ml-0.5">&times;</button>
+                    </span>
+                `).join('');
+            }
+
+            const quickContainer = document.getElementById('quick-tags-container');
+            if (quickContainer) {
+                const allExistingTags = getAllExistingTags();
+                const unusedTags = allExistingTags.filter(t => !modalTags.includes(t));
+                if (unusedTags.length > 0) {
+                    quickContainer.innerHTML = `
+                        <span class="text-[10px] text-gray-400 mr-1 font-medium">Существующие:</span>
+                        ${unusedTags.map(t => `
+                            <button type="button" onclick="addModalTag('${escapeHtml(t)}')" class="px-2 py-0.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-md text-[11px] transition-colors">
+                                +${escapeHtml(t)}
+                            </button>
+                        `).join('')}
+                    `;
+                } else {
+                    quickContainer.innerHTML = '';
+                }
+            }
+        }
+
+        function getAllExistingTags() {
+            const set = new Set();
+            allMarkers.forEach(m => {
+                if (Array.isArray(m.tags)) {
+                    m.tags.forEach(t => set.add(t));
+                }
+            });
+            return Array.from(set);
+        }
+
+        function handleImageUpload(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function (event) {
+                    selectedImage = event.target.result;
+                    showImagePreview(selectedImage);
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function handleImageUrlInput() {
+            const urlInput = document.getElementById('note-image-url');
+            if (urlInput && urlInput.value.trim()) {
+                selectedImage = urlInput.value.trim();
+                showImagePreview(selectedImage);
+            }
+        }
+
+        function showImagePreview(src) {
+            const container = document.getElementById('image-preview-container');
+            const img = document.getElementById('image-preview');
+            if (container && img) {
+                img.src = src;
+                container.classList.remove('hidden');
+            }
+        }
+
+        function removeImage() {
+            selectedImage = null;
+            const container = document.getElementById('image-preview-container');
+            const urlInput = document.getElementById('note-image-url');
+            const fileInput = document.getElementById('note-image-file');
+            if (container) container.classList.add('hidden');
+            if (urlInput) urlInput.value = '';
+            if (fileInput) fileInput.value = '';
+        }
+
+        function openModal(noteToEdit = null) {
+            const modal = document.getElementById('note-modal');
+            const modalContent = document.getElementById('note-modal-content');
+            const modalTitleText = document.getElementById('modal-title-text');
+            const modalSubmitBtn = document.getElementById('modal-submit-btn');
+            const titleInput = document.getElementById('note-title');
+            const textInput = document.getElementById('note-text');
+            const urlInput = document.getElementById('note-image-url');
+
+            if (noteToEdit) {
+                editingNoteId = noteToEdit.id;
+                modalTitleText.textContent = 'Редактировать заметку';
+                modalSubmitBtn.textContent = 'Сохранить';
+                titleInput.value = noteToEdit.title || '';
+                textInput.value = noteToEdit.text || '';
+                selectedColor = noteToEdit.color || PRESET_COLORS[0].value;
+                selectedImage = noteToEdit.image || null;
+                modalTags = Array.isArray(noteToEdit.tags) ? [...noteToEdit.tags] : [];
+                if (selectedImage) {
+                    if (selectedImage.startsWith('http')) {
+                        if (urlInput) urlInput.value = selectedImage;
+                    }
+                    showImagePreview(selectedImage);
+                } else {
+                    removeImage();
+                }
+            } else {
+                editingNoteId = null;
+                modalTitleText.textContent = 'Новая заметка';
+                modalSubmitBtn.textContent = 'Добавить на карту';
+                titleInput.value = '';
+                textInput.value = '';
+                selectedColor = PRESET_COLORS[0].value;
+                modalTags = [];
+                removeImage();
+            }
+
+            renderPresetColorPicker();
+            renderModalTags();
+
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                modalContent.classList.remove('scale-95');
+                titleInput.focus();
+            }, 10);
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('note-modal');
+            const modalContent = document.getElementById('note-modal-content');
+            if (!modal) return;
+            modal.classList.add('opacity-0');
+            modalContent.classList.add('scale-95');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+                editingNoteId = null;
+                currentClickLatLng = null;
+            }, 300);
+        }
+
+        function handleEditNote(id) {
+            const note = allMarkers.find(m => m.id === id);
+            if (note) {
+                map.closePopup();
+                openModal(note);
+            }
+        }
+
+        async function handleDeleteNote(id) {
+            const index = allMarkers.findIndex(m => m.id === id);
+            if (index !== -1) {
+                const note = allMarkers[index];
+                map.removeLayer(note.marker);
+                await deleteNoteFromLocalFolder(note.title);
+                allMarkers.splice(index, 1);
+                updateCounter();
+                updateFilterUI();
+                saveToLocalStorage();
+                showToast('Заметка удалена');
+            }
+        }
+
+        async function saveNote() {
+            const titleInput = document.getElementById('note-title');
+            const textInput = document.getElementById('note-text');
+
+            const title = titleInput.value.trim() || 'Без заголовка';
+
+            const isDuplicate = allMarkers.some(m => {
+                if (editingNoteId !== null && m.id === editingNoteId) {
+                    return false;
+                }
+                return m.title.trim().toLowerCase() === title.toLowerCase();
+            });
+
+            if (isDuplicate) {
+                showToast('Заметка с таким именем уже существует!');
+                titleInput.focus();
+                titleInput.classList.add('ring-2', 'ring-red-500');
+                setTimeout(() => titleInput.classList.remove('ring-2', 'ring-red-500'), 2000);
+                return;
+            }
+
+            const text = textInput.value.trim();
+            const color = selectedColor;
+            const image = selectedImage;
+            const tags = [...modalTags];
+
+            const customIcon = L.divIcon({
+                className: 'custom-marker-icon',
+                html: createSvgIcon(color),
+                iconSize: [32, 48],
+                iconAnchor: [16, 48],
+                popupAnchor: [0, -42]
+            });
+
+            let oldTitle = null;
+
+            if (editingNoteId !== null) {
+                const noteData = allMarkers.find(m => m.id === editingNoteId);
+                if (noteData) {
+                    if (noteData.title !== title) {
+                        oldTitle = noteData.title;
+                    }
+                    noteData.title = title;
+                    noteData.text = text;
+                    noteData.color = color;
+                    noteData.image = image;
+                    noteData.tags = tags;
+                    noteData.marker.setIcon(customIcon);
+                    noteData.marker.setPopupContent(createPopupContent(noteData));
+                    showToast('Заметка обновлена');
+                }
+            } else {
+                if (!currentClickLatLng) return;
+
+                const newId = Date.now();
+                const marker = L.marker(currentClickLatLng, { 
+                    icon: customIcon,
+                    draggable: false 
+                }).addTo(map);
+
+                const noteData = {
+                    id: newId,
+                    marker: marker,
+                    color: color,
+                    title: title,
+                    text: text,
+                    image: image,
+                    tags: tags,
+                    lat: currentClickLatLng.lat,
+                    lng: currentClickLatLng.lng
+                };
+
+                setupLongPressDrag(marker, noteData);
+
+                marker.bindPopup(createPopupContent(noteData));
+                allMarkers.push(noteData);
+                marker.openPopup();
+                showToast('Заметка создана');
+            }
+
+            if (oldTitle) {
+                await deleteNoteFromLocalFolder(oldTitle);
+            }
+
+            const targetNote = editingNoteId !== null 
+                ? allMarkers.find(m => m.id === editingNoteId) 
+                : allMarkers[allMarkers.length - 1];
+            
+            await saveNoteToLocalFolder(targetNote);
+
+            closeModal();
+            updateCounter();
+            updateFilterUI();
+            saveToLocalStorage();
+        }
+
+        function updateFolderWarningVisibility() {
+            const warningBanner = document.getElementById('folder-warning-banner');
+            const folderBtnText = document.getElementById('folder-btn-text');
+            const folderBtn = document.getElementById('folder-btn');
+            const statusDot = document.getElementById('folder-status-dot');
+
+            if (dirHandle) {
+                if (warningBanner) warningBanner.classList.add('hidden');
+                if (folderBtnText) folderBtnText.textContent = `Папка: ${dirHandle.name}`;
+                if (folderBtn) {
+                    folderBtn.className = 'px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-semibold rounded-xl transition-all border border-emerald-200/80 flex items-center gap-1.5';
+                }
+                if (statusDot) {
+                    statusDot.className = 'w-2 h-2 rounded-full bg-emerald-500';
+                }
+            } else {
+                if (folderBtnText) folderBtnText.textContent = 'Выбрать папку ПК';
+                if (folderBtn) {
+                    folderBtn.className = 'px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 hover:text-amber-800 text-xs font-semibold rounded-xl transition-all border border-amber-200/80 flex items-center gap-1.5';
+                }
+                if (statusDot) {
+                    statusDot.className = 'w-2 h-2 rounded-full bg-amber-500 animate-pulse';
+                }
+
+                if (warningBanner) {
+                    if (isFolderWarningDismissed) {
+                        warningBanner.classList.add('hidden');
+                    } else {
+                        warningBanner.classList.remove('hidden');
+                    }
+                }
+            }
+        }
+
+        function dismissFolderWarning() {
+            isFolderWarningDismissed = true;
+            updateFolderWarningVisibility();
+        }
+
+        async function selectLocalFolder() {
+            try {
+                if (!('showDirectoryPicker' in window)) {
+                    showToast('Ваш браузер не поддерживает прямое сохранение в папки. Используйте "Скачать ZIP" или "Импорт ZIP"');
+                    return;
+                }
+                dirHandle = await window.showDirectoryPicker();
+                updateFolderWarningVisibility();
+                showToast(`Папка «${dirHandle.name}» подключена`);
+                
+                await readNotesFromLocalFolder();
+
+                for (const note of allMarkers) {
+                    await saveNoteToLocalFolder(note);
+                }
+            } catch (err) {
+                if (err.name === 'SecurityError') {
+                    showToast('Ограничение безопасности: скачайте заметки кнопкой "Скачать ZIP"');
+                } else if (err.name !== 'AbortError') {
+                    console.error(err);
+                    showToast('Ошибка доступа к папке');
+                }
+            }
+        }
+
+        async function readNotesFromLocalFolder() {
+            if (!dirHandle) return;
+            try {
+                let loadedCount = 0;
+                for await (const entry of dirHandle.values()) {
+                    if (entry.kind === 'directory') {
+                        try {
+                            const subDir = entry;
+                            const fileHandle = await subDir.getFileHandle('note_info.json');
+                            const file = await fileHandle.getFile();
+                            const text = await file.text();
+                            const data = JSON.parse(text);
+
+                            if (data && data.coordinates && typeof data.coordinates.lat === 'number') {
+                                if (allMarkers.some(m => m.id === data.id || m.title === data.title)) {
+                                    continue;
+                                }
+
+                                let image = null;
+                                try {
+                                    const imgHandle = await subDir.getFileHandle('image.png');
+                                    const imgFile = await imgHandle.getFile();
+                                    image = await new Promise((res) => {
+                                        const reader = new FileReader();
+                                        reader.onload = e => res(e.target.result);
+                                        reader.readAsDataURL(imgFile);
+                                    });
+                                } catch (e) {
+                                    try {
+                                        const imgHandle = await subDir.getFileHandle('image.jpg');
+                                        const imgFile = await imgHandle.getFile();
+                                        image = await new Promise((res) => {
+                                            const reader = new FileReader();
+                                            reader.onload = e => res(e.target.result);
+                                            reader.readAsDataURL(imgFile);
+                                        });
+                                    } catch (e2) {
+                                        try {
+                                            const urlHandle = await subDir.getFileHandle('image_url.txt');
+                                            const urlFile = await urlHandle.getFile();
+                                            image = (await urlFile.text()).trim();
+                                        } catch (e3) {}
+                                    }
+                                }
+
+                                const latlng = [data.coordinates.lat, data.coordinates.lng];
+                                const customIcon = L.divIcon({
+                                    className: 'custom-marker-icon',
+                                    html: createSvgIcon(data.color || '#3B82F6'),
+                                    iconSize: [32, 48],
+                                    iconAnchor: [16, 48],
+                                    popupAnchor: [0, -42]
+                                });
+
+                                const marker = L.marker(latlng, { icon: customIcon, draggable: false }).addTo(map);
+
+                                const noteData = {
+                                    id: data.id || Date.now() + Math.random(),
+                                    marker: marker,
+                                    color: data.color || '#3B82F6',
+                                    title: data.title,
+                                    text: data.text || '',
+                                    image: image,
+                                    tags: data.tags || [],
+                                    lat: data.coordinates.lat,
+                                    lng: data.coordinates.lng
+                                };
+
+                                setupLongPressDrag(marker, noteData);
+                                marker.bindPopup(createPopupContent(noteData));
+                                allMarkers.push(noteData);
+                                loadedCount++;
+                            }
+                        } catch (subErr) {}
+                    }
+                }
+                if (loadedCount > 0) {
+                    updateCounter();
+                    updateFilterUI();
+                    saveToLocalStorage();
+                    showToast(`Загружено заметок из папки: ${loadedCount}`);
+                }
+            } catch (err) {
+                console.warn("Ошибка чтения папки:", err);
+            }
+        }
+
+        async function saveNoteToLocalFolder(note) {
+            if (!dirHandle || !note) return;
+            try {
+                const folderName = sanitizeFolderName(note.title);
+                const subDirHandle = await dirHandle.getDirectoryHandle(folderName, { create: true });
+                
+                const fileHandle = await subDirHandle.getFileHandle('note_info.json', { create: true });
+                const writable = await fileHandle.createWritable();
+                
+                const noteExportData = {
+                    id: note.id,
+                    title: note.title,
+                    text: note.text,
+                    color: note.color,
+                    tags: note.tags || [],
+                    coordinates: { lat: note.lat, lng: note.lng },
+                    updatedAt: new Date().toISOString()
+                };
+                
+                await writable.write(JSON.stringify(noteExportData, null, 2));
+                await writable.close();
+
+                if (note.image) {
+                    if (note.image.startsWith('data:image')) {
+                        const parts = note.image.split(';base64,');
+                        const contentType = parts[0].split(':')[1] || 'image/png';
+                        const ext = contentType.includes('jpeg') || contentType.includes('jpg') ? 'jpg' : 'png';
+                        const imgHandle = await subDirHandle.getFileHandle(`image.${ext}`, { create: true });
+                        const imgWritable = await imgHandle.createWritable();
+                        const byteCharacters = atob(parts[1]);
+                        const byteNumbers = new Array(byteCharacters.length);
+                        for (let i = 0; i < byteCharacters.length; i++) {
+                            byteNumbers[i] = byteCharacters.charCodeAt(i);
+                        }
+                        const byteArray = new Uint8Array(byteNumbers);
+                        await imgWritable.write(new Blob([byteArray], { type: contentType }));
+                        await imgWritable.close();
+                    } else {
+                        const urlHandle = await subDirHandle.getFileHandle('image_url.txt', { create: true });
+                        const urlWritable = await urlHandle.createWritable();
+                        await urlWritable.write(note.image);
+                        await urlWritable.close();
+                    }
+                }
+            } catch (e) {
+                console.error("Ошибка сохранения в папку:", e);
+            }
+        }
+
+        async function deleteNoteFromLocalFolder(title) {
+            if (!dirHandle || !title) return;
+            try {
+                const folderName = sanitizeFolderName(title);
+                await dirHandle.removeEntry(folderName, { recursive: true });
+            } catch (e) {
+                console.warn("Папка не найдена или уже удалена:", e);
+            }
+        }
+
+        async function exportNotesZip() {
+            if (allMarkers.length === 0) {
+                showToast('Нет заметок для экспорта');
+                return;
+            }
+
+            if (typeof JSZip === 'undefined') {
+                showToast('Модуль архивации загружается...');
+                return;
+            }
+
+            try {
+                showToast('Формирование ZIP-архива...');
+                const zip = new JSZip();
+
+                for (const note of allMarkers) {
+                    const folderName = sanitizeFolderName(note.title);
+                    const folder = zip.folder(folderName);
+
+                    const noteExportData = {
+                        id: note.id,
+                        title: note.title,
+                        text: note.text,
+                        color: note.color,
+                        tags: note.tags || [],
+                        coordinates: { lat: note.lat, lng: note.lng },
+                        updatedAt: new Date().toISOString()
+                    };
+
+                    folder.file('note_info.json', JSON.stringify(noteExportData, null, 2));
+
+                    if (note.image) {
+                        if (note.image.startsWith('data:image')) {
+                            const parts = note.image.split(';base64,');
+                            const contentType = parts[0].split(':')[1] || 'image/png';
+                            const ext = contentType.includes('jpeg') || contentType.includes('jpg') ? 'jpg' : 'png';
+                            folder.file(`image.${ext}`, parts[1], { base64: true });
+                        } else {
+                            folder.file('image_url.txt', note.image);
+                        }
+                    }
+                }
+
+                const content = await zip.generateAsync({ type: 'blob' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(content);
+                link.download = `Map_Notes_${new Date().toISOString().slice(0, 10)}.zip`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(link.href);
+                showToast('ZIP-архив успешно скачан!');
+            } catch (err) {
+                console.error('Ошибка экспорта ZIP:', err);
+                showToast('Ошибка при формировании архива');
+            }
+        }
+
+        async function importNotesZip(file) {
+            if (!file) return;
+
+            if (typeof JSZip === 'undefined') {
+                showToast('Модуль архивации загружается...');
+                return;
+            }
+
+            try {
+                showToast('Распаковка и импорт заметок...');
+                const zip = new JSZip();
+                const contents = await zip.loadAsync(file);
+                let importedCount = 0;
+
+                const folderMap = {};
+
+                for (const filename of Object.keys(contents.files)) {
+                    const zipObj = contents.files[filename];
+                    if (zipObj.dir) continue;
+
+                    const parts = filename.split('/');
+                    if (parts.length < 2) continue;
+
+                    const folderName = parts[0];
+                    const baseName = parts[parts.length - 1];
+
+                    if (!folderMap[folderName]) folderMap[folderName] = {};
+
+                    if (baseName === 'note_info.json') {
+                        const jsonStr = await zipObj.async('text');
+                        folderMap[folderName].json = JSON.parse(jsonStr);
+                    } else if (baseName.startsWith('image.') && !baseName.endsWith('.txt')) {
+                        const base64 = await zipObj.async('base64');
+                        const ext = baseName.split('.').pop().toLowerCase();
+                        const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png';
+                        folderMap[folderName].image = `data:${mime};base64,${base64}`;
+                    } else if (baseName === 'image_url.txt') {
+                        const url = await zipObj.async('text');
+                        folderMap[folderName].image = url.trim();
+                    }
+                }
+
+                for (const folderName in folderMap) {
+                    const item = folderMap[folderName];
+                    if (!item.json) continue;
+
+                    const data = item.json;
+
+                    if (allMarkers.some(m => m.id === data.id || m.title.toLowerCase() === data.title.toLowerCase())) {
+                        continue;
+                    }
+
+                    const latlng = [data.coordinates.lat, data.coordinates.lng];
+                    const customIcon = L.divIcon({
+                        className: 'custom-marker-icon',
+                        html: createSvgIcon(data.color || '#3B82F6'),
+                        iconSize: [32, 48],
+                        iconAnchor: [16, 48],
+                        popupAnchor: [0, -42]
+                    });
+
+                    const marker = L.marker(latlng, { icon: customIcon, draggable: false }).addTo(map);
+
+                    const noteData = {
+                        id: data.id || Date.now() + Math.random(),
+                        marker: marker,
+                        color: data.color || '#3B82F6',
+                        title: data.title,
+                        text: data.text || '',
+                        image: item.image || null,
+                        tags: data.tags || [],
+                        lat: data.coordinates.lat,
+                        lng: data.coordinates.lng
+                    };
+
+                    setupLongPressDrag(marker, noteData);
+                    marker.bindPopup(createPopupContent(noteData));
+                    allMarkers.push(noteData);
+                    importedCount++;
+                }
+
+                updateCounter();
+                updateFilterUI();
+                saveToLocalStorage();
+
+                if (importedCount > 0) {
+                    showToast(`Импортировано заметок: ${importedCount}`);
+                } else {
+                    showToast('Все заметки из ZIP уже присутствуют на карте');
+                }
+            } catch (err) {
+                console.error('Ошибка импорта ZIP:', err);
+                showToast('Ошибка при чтении ZIP-файла');
+            }
+        }
+
+        function applyFilter(color = currentFilterColor, tag = currentFilterTag) {
+            currentFilterColor = color;
+            currentFilterTag = tag;
+            
+            allMarkers.forEach(note => {
+                const matchColor = !currentFilterColor || note.color === currentFilterColor;
+                const matchTag = !currentFilterTag || (Array.isArray(note.tags) && note.tags.includes(currentFilterTag));
+
+                if (matchColor && matchTag) {
+                    if (!map.hasLayer(note.marker)) {
+                        map.addLayer(note.marker);
+                    }
+                } else {
+                    if (map.hasLayer(note.marker)) {
+                        map.removeLayer(note.marker);
+                    }
+                }
+            });
+
+            const filterBtns = document.querySelectorAll('.filter-btn');
+            filterBtns.forEach(btn => {
+                const btnColor = btn.dataset.color;
+                if ((!currentFilterColor && !btnColor) || btnColor === currentFilterColor) {
+                    btn.classList.add('ring-2', 'ring-offset-1', 'ring-blue-500', 'scale-105');
+                } else {
+                    btn.classList.remove('ring-2', 'ring-offset-1', 'ring-blue-500', 'scale-105');
+                }
+            });
+
+            const tagBtns = document.querySelectorAll('.tag-filter-btn');
+            tagBtns.forEach(btn => {
+                const btnTag = btn.dataset.tag;
+                if ((!currentFilterTag && !btnTag) || btnTag === currentFilterTag) {
+                    btn.classList.add('bg-blue-600', 'text-white');
+                    btn.classList.remove('bg-gray-100', 'text-gray-600');
+                } else {
+                    btn.classList.remove('bg-blue-600', 'text-white');
+                    btn.classList.add('bg-gray-100', 'text-gray-600');
+                }
+            });
+        }
+
+        function updateCounter() {
+            const counter = document.getElementById('notes-counter');
+            if (counter) {
+                counter.textContent = `Заметок: ${allMarkers.length}`;
+            }
+        }
+
+        function updateFilterUI() {
+            const filterPanel = document.getElementById('filter-panel');
+            const colorsContainer = document.getElementById('filter-colors');
+            const tagsContainer = document.getElementById('filter-tags');
+            const tagsSection = document.getElementById('filter-tags-section');
+
+            if (!filterPanel || !colorsContainer || !tagsContainer) return;
+
+            if (allMarkers.length === 0) {
+                filterPanel.classList.add('hidden');
+                filterPanel.classList.remove('flex');
+                return;
+            }
+
+            filterPanel.classList.remove('hidden');
+            filterPanel.classList.add('flex');
+
+            const usedColors = Array.from(new Set(allMarkers.map(m => m.color)));
+            colorsContainer.innerHTML = `
+                <button onclick="applyFilter(null, currentFilterTag)" class="filter-btn px-2 py-1 text-xs font-semibold rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-all ${!currentFilterColor ? 'ring-2 ring-offset-1 ring-blue-500 scale-105' : ''}">
+                    Все
+                </button>
+            ` + usedColors.map(c => `
+                <button onclick="applyFilter('${c}', currentFilterTag)" data-color="${c}" class="filter-btn w-6 h-6 rounded-full border-2 border-white shadow-sm transition-all hover:scale-110 ${currentFilterColor === c ? 'ring-2 ring-offset-1 ring-blue-500 scale-105' : ''}" style="background-color: ${c};" title="${c}">
+                </button>
+            `).join('');
+
+            const allTags = getAllExistingTags();
+            if (allTags.length > 0) {
+                tagsSection.classList.remove('hidden');
+                tagsContainer.innerHTML = `
+                    <button onclick="applyFilter(currentFilterColor, null)" class="tag-filter-btn px-2 py-1 text-xs font-semibold rounded-lg transition-all ${!currentFilterTag ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}">
+                        Все
+                    </button>
+                ` + allTags.map(t => `
+                    <button onclick="applyFilter(currentFilterColor, '${escapeHtml(t)}')" data-tag="${escapeHtml(t)}" class="tag-filter-btn px-2 py-1 text-xs font-semibold rounded-lg transition-all ${currentFilterTag === t ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}">
+                        #${escapeHtml(t)}
+                    </button>
+                `).join('');
+            } else {
+                tagsSection.classList.add('hidden');
+            }
+        }
+
+        function saveToLocalStorage() {
+            const dataToSave = allMarkers.map(m => ({
+                id: m.id,
+                title: m.title,
+                text: m.text,
+                color: m.color,
+                tags: m.tags || [],
+                image: m.image,
+                lat: m.lat,
+                lng: m.lng
+            }));
+            localStorage.setItem('map_notes_data', JSON.stringify(dataToSave));
+        }
+
+        function loadFromLocalStorage() {
+            const saved = localStorage.getItem('map_notes_data');
+            if (!saved) return;
+
+            try {
+                const notes = JSON.parse(saved);
+                if (Array.isArray(notes)) {
+                    notes.forEach(data => {
+                        const latlng = [data.lat, data.lng];
+                        const customIcon = L.divIcon({
+                            className: 'custom-marker-icon',
+                            html: createSvgIcon(data.color || '#3B82F6'),
+                            iconSize: [32, 48],
+                            iconAnchor: [16, 48],
+                            popupAnchor: [0, -42]
+                        });
+
+                        const marker = L.marker(latlng, { icon: customIcon, draggable: false }).addTo(map);
+
+                        const noteData = {
+                            id: data.id || Date.now() + Math.random(),
+                            marker: marker,
+                            color: data.color || '#3B82F6',
+                            title: data.title,
+                            text: data.text || '',
+                            image: data.image || null,
+                            tags: data.tags || [],
+                            lat: data.lat,
+                            lng: data.lng
+                        };
+
+                        setupLongPressDrag(marker, noteData);
+                        marker.bindPopup(createPopupContent(noteData));
+                        allMarkers.push(noteData);
+                    });
+
+                    updateCounter();
+                    updateFilterUI();
+                }
+            } catch (e) {
+                console.error('Ошибка загрузки локальных заметок:', e);
+            }
+        }
+
+        function showToast(message) {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+
+            const toast = document.createElement('div');
+            toast.className = 'bg-gray-900/90 text-white text-xs font-medium px-4 py-2.5 rounded-xl shadow-lg backdrop-blur-md border border-gray-700/50 flex items-center gap-2 transform translate-y-2 opacity-0 transition-all duration-300 pointer-events-auto';
+            toast.innerHTML = `<span>💬</span><span>${escapeHtml(message)}</span>`;
+
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            }, 10);
+
+            setTimeout(() => {
+                toast.classList.add('translate-y-2', 'opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
     </script>
 </body>
 </html>
